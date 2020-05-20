@@ -239,7 +239,7 @@ handle_search_conference(JObj, _Props, Name) ->
                     ,{<<"Conference-ID">>, Name}
                      | kz_api:default_headers(?APP_NAME, ?APP_VERSION)
                     ],
-            kapi_conference:publish_error(kz_api:server_id(JObj), Error)
+            kapi_conference:publish_conference_error(kz_api:server_id(JObj), Error)
     end.
 
 -spec handle_search_account(kz_json:object(), kz_term:proplist()) -> 'ok'.
