@@ -1602,6 +1602,8 @@ directory_resp_device_xml(Endpoint, JObj) ->
              ,{<<"endpoint-dial-string">>, dial_string(ProxyPath, Endpoint, Id)}
              ,{<<"callforward-dial-string">>, call_forward_dial_string(Endpoint)}
              ,{<<"endpoint-separator">>, ?SEPARATOR_ENTERPRISE}
+             ,{<<"jsonrpc-allowed-methods">>, <<"verto">>}
+             ,{<<"jsonrpc-allowed-event-channels">>, <<"conference">>}
              ],
     ParamsEl = params_el([param_el(K,V) || {K,V} <- Params]),
     UserEl = user_el(UserProps, [VariablesEl, ProfileVariablesEl, ParamsEl, callfwd_el(Endpoint)]),
@@ -1630,6 +1632,8 @@ directory_resp_user_xml(Endpoint, JObj) ->
              ,{<<"endpoint-dial-string">>,  DialEndpoints}
              ,{<<"callforward-dial-string">>, call_forward_dial_string(Endpoint)}
              ,{<<"endpoint-separator">>, ?SEPARATOR_ENTERPRISE}
+             ,{<<"jsonrpc-allowed-methods">>, <<"verto">>}
+             ,{<<"jsonrpc-allowed-event-channels">>, <<"conference">>}
              ],
     ParamsEl = params_el([param_el(K,V) || {K,V} <- Params]),
 
