@@ -311,12 +311,10 @@ get_blacklists(AccountId) ->
 -spec get_blacklist(kz_json:object()) -> kz_json:object().
 get_blacklist(JObj) ->
     AccountId = kzd_fetch:account_id(JObj),
-    case get_blacklists(AccountId) of
-        {'error', _R} -> kz_json:new();
-        {'ok', Blacklists} -> get_blacklist(AccountId, Blacklists)
-    end.
+    get_blacklist(AccountId, get_blacklists(AccountId)).
 
 -spec get_blacklist(kz_term:ne_binary(), kz_term:ne_binaries()) -> kz_json:object().
+get_blacklist(_AccountId, []) -> kz_json:new();
 get_blacklist(AccountId, Blacklists) ->
     AccountDb = kzs_util:format_account_db(AccountId),
     lists:foldl(fun(BlacklistId, Acc) ->
