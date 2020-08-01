@@ -118,7 +118,7 @@
                       ,to_user = <<"nouser">> :: kz_term:ne_binary() | '_'
                       ,user_agent :: kz_term:api_ne_binary() | '_'
                       ,username :: kz_term:api_ne_binary() | '_'
-                      ,endpoint_info :: kz_json:api_object() | '_'
+                      ,endpoint_info :: kz_json:object() | '_'
                       }).
 
 -type registration() :: #registration{}.
@@ -196,7 +196,7 @@ collect_reg_success_props(Key, {FSJObj, Acc}) ->
         Value -> {FSJObj, [{Key, Value} | Acc]}
     end.
 
--spec lookup_endpoint(kz_term:ne_binary(), kz_term:ne_binary()) ->
+-spec lookup_endpoint(binary(), binary()) ->
           {'ok', kz_term:proplist()} |
           {'error', 'not_found'}.
 lookup_endpoint(<<>>, _AccountId) -> {'error', 'not_found'};
