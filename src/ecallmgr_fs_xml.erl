@@ -886,7 +886,7 @@ get_channel_params(JObj) ->
 -spec get_channel_params_fold(kz_term:ne_binary(), kz_term:ne_binary()) ->
           {kz_term:ne_binary(), kz_term:ne_binary()}.
 get_channel_params_fold(<<"Hold-Media">>=Key, Media) ->
-    {ecallmgr_util:get_fs_key(Key), ecallmgr_util:media_path(Media)};
+    {ecallmgr_util:get_fs_key(Key), ecallmgr_util:moh_media_path(Media, 'extant', kz_log:get_callid(), kz_json:new())};
 get_channel_params_fold(Key, Val) ->
     {ecallmgr_util:get_fs_key(Key), ecallmgr_util:maybe_sanitize_fs_value(Key, Val)}.
 
@@ -1547,11 +1547,17 @@ call_forward_dial_string(Endpoint) ->
             list_to_binary(["[^^!", kz_binary:join(Vars, <<"!">>), "]loopback/", URI])
     end.
 
-dial_string('undefined', _Endpoint, _Id) ->
-    <<"error/subscriber_absent">>;
-dial_string(_Proxy, Endpoint, Id) ->
+dial_string(Proxy, Endpoint, Id) ->
+    Uri = kz_json:get_ne_binary_value(<<"SIP-Invite-Route-URI">>, Endpoint),
     SIPInterface = kz_json:get_ne_binary_value(<<"SIP-Interface">>, Endpoint, ?DEFAULT_FS_PROFILE),
-    list_to_binary(["sofia/", SIPInterface, "/", Id]).
+    dial_string(Proxy, Uri, Id, SIPInterface).
+
+dial_string(undefined, undefined, _Id, _SIPInterface) ->
+    <<"error/subscriber_absent">>;
+dial_string(_Proxy, undefined, Id, SIPInterface) ->
+    list_to_binary(["sofia/", SIPInterface, "/", Id]);
+dial_string(_Proxy, Uri, _Id, SIPInterface) ->
+    list_to_binary(["sofia/", SIPInterface, "/", Uri]).
 
 -spec directory_resp_endpoint_xml(kz_json:object(), kz_json:object()) -> {'ok', iolist()}.
 directory_resp_endpoint_xml(Endpoint, JObj) ->
@@ -1602,10 +1608,12 @@ directory_resp_device_xml(Endpoint, JObj) ->
     ChannelParams = get_channel_params(Endpoint) ++ get_codecs(Endpoint),
     SIPHeaders = get_custom_sip_headers(Endpoint),
 
+    OriginatingProxy = kz_json:get_ne_binary_value(<<"Originating-Proxy">>, JObj),
+
     VariableEls = [variable_el(K, V) || {K, V} <- ChannelParams],
     HeaderEls = [variable_el(<<"sip_h_", K/binary>>, V) || {K, V} <- SIPHeaders],
     ProxyEls = [variable_el(K, V) || {K, V} <- Vars],
-    ProxyPathEls = [variable_el(<<"sip_route_uri">>, Proxy) || Proxy <- [ProxyPath], Proxy =/= 'undefined'],
+    ProxyPathEls = [variable_el(<<"sip_route_uri">>, Proxy) || Proxy <- [ProxyPath, OriginatingProxy], Proxy =/= 'undefined'],
     VariablesEl = variables_el(VariableEls ++ HeaderEls ++ ProxyEls ++ ProxyPathEls),
 
     Number = kz_json:get_value([<<"Custom-SIP-Headers">>,<<"P-Kazoo-Primary-Number">>],Endpoint),
@@ -1613,8 +1621,7 @@ directory_resp_device_xml(Endpoint, JObj) ->
     ProfileVariablesEl = variables_el('profile-variables', ProfileEls),
     UserProps = props:filter_undefined(user_el_props(Number, UserId)),
 
-    Params = [{<<"group-dial-string">>, <<"kz/", Id/binary>>}
-             ,{<<"endpoint-dial-string">>, dial_string(ProxyPath, Endpoint, Id)}
+    Params = [{<<"endpoint-dial-string">>, dial_string(ProxyPath, Endpoint, Id)}
              ,{<<"callforward-dial-string">>, call_forward_dial_string(Endpoint)}
              ,{<<"endpoint-separator">>, ?SEPARATOR_ENTERPRISE}
              ,{<<"jsonrpc-allowed-methods">>, <<"verto">>}
@@ -1625,6 +1632,12 @@ directory_resp_device_xml(Endpoint, JObj) ->
     DomainEl = domain_el(DomainName, UserEl),
     SectionEl = section_el(<<"directory">>, DomainEl),
     {'ok', xmerl:export([SectionEl], 'fs_xml')}.
+
+-spec user_dial_string(kz_term:ne_binaries(), kz_term:ne_binary()) -> kz_term:ne_binary().
+user_dial_string([], _AccountId) ->
+    <<"error/no_endpoints">>;
+user_dial_string(Ids, AccountId) ->
+    kz_binary:join([list_to_binary(["kz/", M, "@", AccountId]) || M <- Ids], ?SEPARATOR_ENTERPRISE).
 
 -spec directory_resp_user_xml(kz_json:object(), kz_json:object()) -> {'ok', iolist()}.
 directory_resp_user_xml(Endpoint, JObj) ->
@@ -1642,7 +1655,8 @@ directory_resp_user_xml(Endpoint, JObj) ->
     ProfileVariablesEl = variables_el('profile-variables', ProfileEls),
     UserProps = props:filter_undefined(user_el_props('undefined', UserId)),
     Members = kz_json:get_list_value(<<"Members">>, Endpoint, []),
-    DialEndpoints = kz_binary:join([list_to_binary(["kz/", M, "@", DomainName]) || M <- Members], ?SEPARATOR_ENTERPRISE),
+    DialEndpoints = user_dial_string(Members, DomainName),
+    kz_binary:join([list_to_binary(["kz/", M, "@", DomainName]) || M <- Members], ?SEPARATOR_ENTERPRISE),
     Params = [{<<"group-dial-string">>, <<"kz/", Id/binary>>}
              ,{<<"endpoint-dial-string">>,  DialEndpoints}
              ,{<<"callforward-dial-string">>, call_forward_dial_string(Endpoint)}
@@ -1734,4 +1748,4 @@ get_codecs(Endpoint) ->
             Codecs = [kz_term:to_list(codec_mappings(C)) || C <- Cs, not kz_term:is_empty(C)],
             CodecStr = string:join(Codecs, ":"),
             [{<<"absolute_codec_string">> , list_to_binary(["^^:", CodecStr])}]
-	end.
+    end.
