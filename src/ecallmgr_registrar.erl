@@ -118,7 +118,7 @@
                       ,to_user = <<"nouser">> :: kz_term:ne_binary() | '_'
                       ,user_agent :: kz_term:api_ne_binary() | '_'
                       ,username :: kz_term:api_ne_binary() | '_'
-                      ,endpoint_info :: kz_json:object() | '_'
+                      ,endpoint_info :: kz_term:api_object() | '_'
                       }).
 
 -type registration() :: #registration{}.
