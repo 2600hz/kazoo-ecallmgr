@@ -85,7 +85,7 @@ start_link(Node, JObj) ->
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
--spec handle_call_events(kz_call_event:doc(), kz_term:proplist()) -> 'ok'.
+-spec handle_call_events(kz_call_event:payload(), kz_term:proplist()) -> 'ok'.
 handle_call_events(JObj, Props) ->
     Srv = props:get_value('server', Props),
     case props:get_value('uuid', Props) =:= kz_api:call_id(JObj)
@@ -849,8 +849,8 @@ fix_hold_media(Endpoint) ->
 
 -spec should_update_uuid(kz_term:api_binary(), kzd_freeswitch:data()) -> boolean().
 should_update_uuid(OldUUID, FSJObj) ->
-    case kzd_freeswitch:event_subclass(FSJObj, kzd_freeswitch:event_name(FSJObj)) of
-        <<"loopback::bowout">> ->
+    case kzd_freeswitch:event_name(FSJObj) of
+        <<"CHANNEL_REPLACED">> ->
             lager:debug("bowout detected with ~s, old uuid is ~s"
                        ,[kzd_freeswitch:resigning_id(FSJObj), OldUUID]
                        ),

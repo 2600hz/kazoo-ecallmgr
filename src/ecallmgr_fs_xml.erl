@@ -27,7 +27,7 @@
 
 -export([build_leg_vars/1
         ,get_leg_vars/1
-        ,get_channel_vars/1
+        ,get_channel_vars/1, get_channel_vars/3
         ,kazoo_var_to_fs_var/2
         ,escape/2
         ]).
@@ -410,6 +410,10 @@ route_resp_bridge_id() ->
     Action = action_el(<<"export">>, [?SET_CCV(<<"Bridge-ID">>, <<"${UUID}">>)], 'true'),
     condition_el(Action, <<"${", (?CCV(<<"Bridge-ID">>))/binary, "}">>, <<"^$">>).
 
+-spec route_resp_set_originating_proxy(dialplan_context()) -> kz_types:xml_el().
+route_resp_set_originating_proxy(#{payload := Payload}) ->
+    action_el(<<"set">>, list_to_binary([<<"originating_proxy=">>, kz_json:get_ne_binary_value(<<"Originating-Proxy">>, Payload, <<>>)])).
+
 -spec unset_custom_sip_headers() -> kz_types:xml_el().
 unset_custom_sip_headers() ->
     action_el(<<"kz_prefix_unset">>, <<"sip_h_X-">>).
@@ -552,13 +556,17 @@ maybe_endpoint_privacy_header(Prop) ->
 
 -spec get_channel_vars(kz_json:object() | kz_term:proplist()) -> iolist().
 get_channel_vars(Param) ->
-    ["<"
+    get_channel_vars(Param, "<", ">").
+
+-spec get_channel_vars(kz_json:object() | kz_term:proplist(), string(), string()) -> iolist().
+get_channel_vars(Param, Open, Close) ->
+    [Open
     ,string:join([kz_term:to_list(Result)
                   || Result <- channel_vars(Param)
                  ]
                 ,","
                 )
-    ,">"
+    ,Close
     ].
 
 -spec channel_vars(kz_json:object() | kz_term:proplist()) -> iolist().
@@ -599,7 +607,7 @@ channel_vars_handle_asserted_identity({Props, Results}=Acc) ->
     end.
 
 
--spec build_asserted_identity(kz_term:ne_binary(), kz_term:prolist(), iolist()) -> channel_var_fold().
+-spec build_asserted_identity(kz_term:ne_binary(), kz_term:proplist(), iolist()) -> channel_var_fold().
 build_asserted_identity(AssertedIdentity, Props, Results) ->
     {Props
     ,[<<"sip_cid_type=none">>
@@ -1489,6 +1497,7 @@ route_resp_park_xml(JObj, DialplanContext) ->
             ,route_resp_ccvs(JObj)
             ,route_resp_cavs(JObj)
             ,unset_custom_sip_headers()
+            ,route_resp_set_originating_proxy(DialplanContext)
             ,route_resp_set_control_info(DialplanContext)
             ,route_resp_fire_route_win(JObj, DialplanContext)
             ,route_resp_park()

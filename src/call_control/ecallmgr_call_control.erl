@@ -365,12 +365,15 @@ handle_info(_Msg, State) ->
 %% @doc Allows listener to pass options to handlers.
 %% @end
 %%------------------------------------------------------------------------------
--spec handle_call_control(kz_json:object(), state()) -> gen_server:handle_event_return().
+-spec handle_call_control(kz_json:object(), state()) -> 'ok'.
 handle_call_control(JObj, _State) ->
     case kz_api:event_type(JObj) of
         {<<"call">>, <<"command">>} -> handle_call_command(JObj);
         {<<"conference">>, <<"command">>} -> handle_conference_command(JObj);
-        {_Category, _Event} -> lager:debug_unsafe("event ~s : ~s not handled : ~s", [_Category, _Event, kz_json:encode(JObj, ['pretty'])])
+        {_Category, _Event} ->
+            lager:debug_unsafe("event ~s : ~s not handled : ~s"
+                              ,[_Category, _Event, kz_json:encode(JObj, ['pretty'])]
+                              )
     end.
 
 -spec handle_call_command(kz_json:object()) -> 'ok'.
@@ -1004,7 +1007,7 @@ handle_replaced(JObj, #state{fetch_id=FetchId
             {'noreply', State}
     end.
 
--spec handle_direct(kz_call_event:doc(), state()) ->
+-spec handle_direct(kz_call_event:payload(), state()) ->
           {'noreply', state()}.
 handle_direct(JObj, #state{fetch_id=FetchId
                           ,node=_Node
@@ -1065,7 +1068,7 @@ handle_transferor(JObj, #state{fetch_id=FetchId
             {'noreply', State}
     end.
 
--spec handle_event_info(kz_term:ne_binary(), kz_evt_freeswitch:data(), state()) ->
+-spec handle_event_info(kz_term:ne_binary(), kz_evt_freeswitch:payload(), state()) ->
           {'noreply', state()} |
           {'stop', any(), state()}.
 handle_event_info(CallId, JObj, #state{call_id=CallId}=State) ->
