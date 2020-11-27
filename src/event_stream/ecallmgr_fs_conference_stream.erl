@@ -124,5 +124,5 @@ set_participant_interaction_id(_Node, _JObj, false) -> ok;
 set_participant_interaction_id(Node, JObj, true) ->
     ConferenceId = kz_conference_event:conference_id(JObj),
     CallId = kz_conference_event:call_id(JObj),
-    Args = list_to_binary([CallId, " Call-Interaction-ID ${conference(", ConferenceId, " get_var conference-interaction-id)}"]),
+    Args = list_to_binary([CallId, " ", ?CALL_INTERACTION_ID, " ${conference(", ConferenceId, " get_var conference-interaction-id)}"]),
     kz_process:spawn(fun freeswitch:api/3, [Node, 'kz_uuid_setvar', Args]).
