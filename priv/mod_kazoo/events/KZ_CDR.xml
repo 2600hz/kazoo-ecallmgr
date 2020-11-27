@@ -25,6 +25,7 @@
 		<field name="Custom-Application-Vars" type="reference" />
 		<field name="Control" type="reference" />
 		<field name="from-to" type="reference" />
+		<field name="from-to-verto" type="reference" />
 		<field name="other-leg" type="reference" />
 		<field name="sdp" type="reference" />
 		<field name="call-duration" type="reference" />
