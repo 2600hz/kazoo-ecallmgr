@@ -38,7 +38,10 @@ exec_cmd(Node, UUID, JObj, _ControlPid, UUID) ->
     AnonymizedJObj = enforce_privacy(Node, UUID, JObj),
     case get_fs_app(Node, UUID, AnonymizedJObj, App) of
         {'error', Msg} -> throw({'msg', Msg});
-        {'return', Result} -> Result;
+        {'return', error} ->
+            Msg = io_lib:format("app ~s cmd returned error", [App]),
+            throw({'msg', kz_term:to_binary(Msg)});
+        {'return', Result} -> lager:info("app ~s cmd return ~p", [Result]);
         {_AppName, 'noop'} -> 'ok';
         {AppName, AppData} ->
             ecallmgr_util:send_cmd(Node, UUID, App, AppName, AppData);
