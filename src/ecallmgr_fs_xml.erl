@@ -1782,4 +1782,4 @@ prompt_resp_xml(Url, JObj) ->
 %% handling enterprise bridge string
 %% with semi-attended transfers
 kz_endpoint_separator() ->
-    ?SEPARATOR_SIMULTANEOUS.
+    ?SEPARATOR_ENTERPRISE.
