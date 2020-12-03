@@ -929,6 +929,6 @@ maybe_update_channel(UUID, Channel) ->
     catch
         _:_ ->
             lager:info("channel ~s missing, not updating with ~p"
-                      ,[UUID, ecallmgr_fs_channel:format('json', Channel)]
+                      ,[UUID, ecallmgr_fs_channel:to_json(Channel)]
                       )
     end.
