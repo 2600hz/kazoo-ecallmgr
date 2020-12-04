@@ -1612,7 +1612,9 @@ directory_resp_device_xml(Endpoint, JObj) ->
     SIPHeadersEl = [param_el(<<"dial-var-sip_h_", K/binary>>, V) || {K, V} <- SIPHeaders],
     Params = [{<<"endpoint-dial-string">>, dial_string(Endpoint, Id)}
              ,{<<"callforward-dial-string">>, call_forward_dial_string(Endpoint)}
-             ,{<<"endpoint-separator">>, kz_endpoint_separator()}
+             ,{<<"endpoint-separator">>
+              ,kz_endpoint_separator(DomainName)
+              }
              ,{<<"jsonrpc-allowed-methods">>, <<"verto">>}
              ,{<<"jsonrpc-allowed-event-channels">>, <<"conference">>}
              ],
@@ -1628,8 +1630,9 @@ directory_resp_device_xml(Endpoint, JObj) ->
 user_dial_string([], _AccountId) ->
     <<"error/no_endpoints">>;
 user_dial_string(Ids, AccountId) ->
-    kz_binary:join([list_to_binary(["kz/", M, "@", AccountId]) || M <- Ids], kz_endpoint_separator()).
-
+    kz_binary:join([list_to_binary(["kz/", M, "@", AccountId]) || M <- Ids]
+                  ,kz_endpoint_separator(AccountId)
+                  ).
 
 -spec directory_resp_user_xml(kz_json:object(), kz_json:object()) -> {'ok', iolist()}.
 directory_resp_user_xml(Endpoint, JObj) ->
@@ -1650,7 +1653,9 @@ directory_resp_user_xml(Endpoint, JObj) ->
     Params = [{<<"group-dial-string">>, <<"kz/", Id/binary>>}
              ,{<<"endpoint-dial-string">>,  DialEndpoints}
              ,{<<"callforward-dial-string">>, call_forward_dial_string(Endpoint)}
-             ,{<<"endpoint-separator">>, kz_endpoint_separator()}
+             ,{<<"endpoint-separator">>
+              ,kz_endpoint_separator(DomainName)
+              }
              ,{<<"jsonrpc-allowed-methods">>, <<"verto">>}
              ,{<<"jsonrpc-allowed-event-channels">>, <<"conference">>}
              ],
@@ -1788,5 +1793,9 @@ prompt_resp_xml(Url, JObj) ->
 %% there is an issue with freeswitch
 %% handling enterprise bridge string
 %% with semi-attended transfers
-kz_endpoint_separator() ->
-    ?SEPARATOR_ENTERPRISE.
+kz_endpoint_separator(AccountId) ->
+    case kz_term:is_empty(AccountId) of
+        'true' -> kapps_config:get_ne_binary(?APP_NAME, <<"endpoint_separator">>, ?SEPARATOR_SIMULTANEOUS);
+        'false' ->
+            kapps_account_config:get_ne_binary(AccountId, ?APP_NAME, <<"endpoint_separator">>, ?SEPARATOR_SIMULTANEOUS)
+    end.
