@@ -59,10 +59,21 @@ process(#{payload := FetchJObj, channel := Channel}=Map) ->
                ,fun request/1
                ,fun block_call_routines/1
                ,fun apply_formatters/1
+               ,fun ensure_switch_uri/1
                ,fun timeout_reply/1
                ,fun maybe_authz/1
                ],
     maybe_expired(kz_maps:exec(Routines, Map)).
+
+-spec ensure_switch_uri(dialplan_context()) -> dialplan_context().
+ensure_switch_uri(#{fetch_id := FetchId, request := JObj, node := Node}=Map) ->
+    case kz_json:get_ne_binary_value(<<"Switch-URI">>, JObj) of
+        'undefined' ->
+            URL = binary:replace(ecallmgr_fs_nodes:sip_url(Node), <<"mod_sofia@">>, <<>>),
+            lager:debug("adding switch uri ~s to request ~s", [URL, FetchId]),
+            Map#{request => kz_json:set_value(<<"Switch-URI">>, URL, JObj)};
+        _Else -> Map
+    end.
 
 request(#{request := _Request}=Map) -> Map;
 request(#{control_q := ControlQ, control_p := ControlP, payload := FetchJObj}=Map) ->
