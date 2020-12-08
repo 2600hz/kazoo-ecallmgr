@@ -102,8 +102,12 @@ validate_token(#{payload := JObj} = Ctx, {'ok', Claims}) ->
 
 -spec lookup_registrar(map()) -> fs_handlecall_ret().
 lookup_registrar(#{payload := JObj}=Ctx) ->
-    EndpointId = kzd_fetch:fetch_user(JObj),
-    AccountId = kzd_fetch:fetch_key_value(JObj),
+    lookup_registrar(Ctx
+                    ,kzd_fetch:fetch_user(JObj)
+                    ,kzd_fetch:fetch_key_value(JObj)
+                    ).
+
+lookup_registrar(Ctx, EndpointId, AccountId) ->
     case ecallmgr_registrar:lookup_endpoint(EndpointId, AccountId) of
         {'error', 'not_found'} -> lookup_directory(Ctx);
         {'ok', Endpoint} -> fetch_directory(EndpointId, AccountId, Ctx, [{'endpoint', kz_json:from_list(Endpoint)}])
@@ -129,6 +133,9 @@ fetch_options(#{payload := JObj}) ->
 fetch_directory(EndpointId, AccountId, Ctx) ->
     fetch_directory(EndpointId, AccountId, Ctx, []).
 
+fetch_directory(<<"conference">>, _AccountId, Ctx, _Options) ->
+    lager:info("internal conference extension directory lookup, skipping"),
+    directory_not_found(Ctx);
 fetch_directory(EndpointId, AccountId, #{payload := JObj} = Ctx, Options) ->
     Opts = props:set_values(Options, fetch_options(Ctx)),
     lager:debug("fetch directory for ~s : ~s", [EndpointId, AccountId]),
