@@ -133,10 +133,13 @@ fetch_options(#{payload := JObj}) ->
 fetch_directory(EndpointId, AccountId, Ctx) ->
     fetch_directory(EndpointId, AccountId, Ctx, []).
 
-fetch_directory(<<"conference">>, _AccountId, Ctx, _Options) ->
-    lager:info("internal conference extension directory lookup, skipping"),
+fetch_directory(EndpointId, AccountId, Ctx, Options) ->
+    fetch_directory(EndpointId, AccountId, Ctx, Options, kapps_conference:inter_conference_extension()).
+
+fetch_directory(ConferenceExt, _AccountId, Ctx, _Options, ConferenceExt) ->
+    lager:info("internal conference extension (~s) directory lookup, skipping", [ConferenceExt]),
     directory_not_found(Ctx);
-fetch_directory(EndpointId, AccountId, #{payload := JObj} = Ctx, Options) ->
+fetch_directory(EndpointId, AccountId, #{payload := JObj} = Ctx, Options, _ConferenceExt) ->
     Opts = props:set_values(Options, fetch_options(Ctx)),
     lager:debug("fetch directory for ~s : ~s", [EndpointId, AccountId]),
     case kz_directory:lookup(EndpointId, AccountId, Opts) of
