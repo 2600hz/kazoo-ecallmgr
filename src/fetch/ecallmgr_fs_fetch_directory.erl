@@ -107,8 +107,12 @@ validate_token(#{payload := JObj} = Context, {'ok', Claims}) ->
 
 -spec lookup_registrar(map()) -> fs_handlecall_ret().
 lookup_registrar(#{payload := JObj}=Context) ->
-    EndpointId = kzd_fetch:fetch_user(JObj),
-    AccountId = kzd_fetch:fetch_key_value(JObj),
+    lookup_registrar(Context
+                    ,kzd_fetch:fetch_user(JObj)
+                    ,kzd_fetch:fetch_key_value(JObj)
+                    ).
+
+lookup_registrar(Context, EndpointId, AccountId) ->
     case ecallmgr_registrar:lookup_endpoint(EndpointId, AccountId) of
         {'error', 'not_found'} -> lookup_directory(Context);
         {'ok', Endpoint} -> fetch_directory(EndpointId, AccountId, Context, [{'endpoint', kz_json:from_list(Endpoint)}])
