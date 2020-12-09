@@ -544,6 +544,9 @@ get_fs_kv(Key, Value) ->
 get_fs_kv(<<"Hold-Media">>, Media, UUID) ->
     MediaPath = moh_media_path(Media, 'extant', UUID, kz_json:new()),
     list_to_binary(["hold_music=", MediaPath]);
+get_fs_kv(<<"Custom-Hold-Media">>, Media, UUID) ->
+    MediaPath = moh_media_path(Media, 'extant', UUID, kz_json:new()),
+    list_to_binary(["temp_hold_music=", MediaPath]);
 get_fs_kv(?CCV(Key), Val, UUID) ->
     get_fs_kv(Key, Val, UUID);
 get_fs_kv(Key, Val, _) ->
@@ -572,6 +575,9 @@ get_fs_key(Key) ->
           [{kz_term:ne_binary(), binary()}] |
           'skip'.
 get_fs_key_and_value(<<"Hold-Media">>=Key, Media, UUID) ->
+    MediaPath = moh_media_path(Media, 'extant', UUID, kz_json:new()),
+    {get_fs_key(Key), MediaPath};
+get_fs_key_and_value(<<"Custom-Hold-Media">>=Key, Media, UUID) ->
     MediaPath = moh_media_path(Media, 'extant', UUID, kz_json:new()),
     {get_fs_key(Key), MediaPath};
 get_fs_key_and_value(<<"Diversions">>=Key, Diversions, _UUID) ->
@@ -625,6 +631,10 @@ maybe_sanitize_fs_value(<<"Export-Variables">>, Val) ->
 maybe_sanitize_fs_value(<<"Require-Fail-On-Single-Reject">>, <<Val/binary>>) ->
     Val;
 maybe_sanitize_fs_value(<<"Require-Fail-On-Single-Reject">>, Val) when is_list(Val) ->
+    kz_binary:join(Val, <<",">>);
+maybe_sanitize_fs_value(<<"Failover-Reasons">>, <<Val/binary>>) ->
+    Val;
+maybe_sanitize_fs_value(<<"Failover-Reasons">>, Val) when is_list(Val) ->
     kz_binary:join(Val, <<",">>);
 maybe_sanitize_fs_value(Key, Val) when not is_binary(Key) ->
     maybe_sanitize_fs_value(kz_term:to_binary(Key), Val);
@@ -1248,6 +1258,8 @@ media_path(<<"http://", _/binary>> = URI, _Type, _UUID, _) -> get_fs_playback(UR
 media_path(<<"https://", _/binary>> = URI, _Type, _UUID, _) -> get_fs_playback(URI);
 media_path(<<?HTTP_GET_PREFIX, _/binary>> = Media, _Type, _UUID, _) -> Media;
 media_path(<<"\$", _/binary>> = Media, _Type, _UUID, _) -> Media;
+media_path(<<"prompt://", _/binary>> = Media, _Type, _UUID, _) -> Media;
+media_path(<<"/", _/binary>> = Media, _Type, _UUID, _) -> <<"prompt:/", Media/binary>>;
 media_path(MediaName, Type, UUID, JObj) ->
     case lookup_media(MediaName, Type, UUID, JObj) of
         {'error', _E} ->
@@ -1489,8 +1501,8 @@ maybe_add_expires_deviation_ms(Expires) ->
 
 -spec get_dial_separator(kz_term:api_object() | kz_term:ne_binary(), kz_json:objects()) -> kz_term:ne_binary().
 get_dial_separator(?DIAL_METHOD_SINGLE, _Endpoints) -> ?SEPARATOR_SINGLE;
-%%get_dial_separator(?DIAL_METHOD_SIMUL, [_, _|_]) -> ?SEPARATOR_SIMULTANEOUS;
-get_dial_separator(?DIAL_METHOD_SIMUL, [_, _|_]) -> ?SEPARATOR_ENTERPRISE;
+get_dial_separator(?DIAL_METHOD_SIMUL, [_, _|_]) -> ?SEPARATOR_SIMULTANEOUS;
+%%get_dial_separator(?DIAL_METHOD_SIMUL, [_, _|_]) -> ?SEPARATOR_ENTERPRISE;
 get_dial_separator(?DIAL_METHOD_SIMUL, [_]) -> ?SEPARATOR_SINGLE;
 get_dial_separator('undefined', _Endpoints) -> ?SEPARATOR_SINGLE;
 get_dial_separator(JObj, Endpoints) ->
