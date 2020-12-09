@@ -158,4 +158,3 @@ send_reply(#{node := Node, fetch_id := FetchId} = Context) ->
                ,[Node, FetchId]
                ),
     freeswitch:fetch_reply(Context).
-            
