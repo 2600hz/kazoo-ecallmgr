@@ -578,9 +578,12 @@ interface(Node) ->
 interface(Node, Profile) ->
     gen_server:call(find_srv(Node), {'interface', Profile}).
 
--spec instance_uuid(atom() | binary()) -> kz_term:api_ne_binary().
+-spec instance_uuid(atom() | binary() | pid()) -> kz_term:api_ne_binary().
 instance_uuid(Node) ->
-    gen_server:call(find_srv(Node), 'instance_uuid').
+    case find_srv(Node) of
+        undefined -> undefined;
+        Pid -> gen_server:call(Pid, 'instance_uuid')
+    end.
 
 -spec sessions(fs_node()) -> kz_term:api_binary().
 sessions(Srv) ->
