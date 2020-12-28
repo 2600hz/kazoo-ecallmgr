@@ -203,7 +203,7 @@ lookup_endpoint(<<>>, _AccountId) -> {'error', 'not_found'};
 lookup_endpoint(_EndpointId, <<>>) -> {'error', 'not_found'};
 lookup_endpoint(<<EndpointId/binary>>, <<AccountId/binary>>) ->
     MatchSpec = #registration{account_id = AccountId
-                             ,authorizing_id = EndpointId
+                             ,id = {EndpointId, '_'}
                              ,_ = '_'
                              },
 
