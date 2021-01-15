@@ -1175,13 +1175,13 @@ record_call(Node, UUID, JObj) ->
 -spec record_call(atom(), kz_term:ne_binary(), kz_term:ne_binary(), kz_json:object()) -> fs_app().
 record_call(_Node, _UUID, <<"mask">>, JObj) ->
     RecordingName = case kz_json:get_ne_binary_value(<<"Media-Name">>, JObj) of
-                        'undefined' -> <<"${Media-Recordings[0]}">>;
+                        'undefined' -> <<"${Media-Recordings-Name[0]}">>;
                         MediaName -> ecallmgr_util:recording_filename(MediaName)
                     end,
     {<<"record_session_mask">>, RecordingName};
 record_call(_Node, _UUID, <<"unmask">>, JObj) ->
     RecordingName = case kz_json:get_ne_binary_value(<<"Media-Name">>, JObj) of
-                        'undefined' -> <<"${Media-Recordings[0]}">>;
+                        'undefined' -> <<"${Media-Recordings-Name[0]}">>;
                         MediaName -> ecallmgr_util:recording_filename(MediaName)
                     end,
     {<<"record_session_unmask">>, RecordingName};
@@ -1204,11 +1204,12 @@ record_call(Node, UUID, <<"start">>, JObj) ->
                  ],
 
     [{<<"unshift">>, <<"Media-Recordings=", RecordingId/binary>>}
+    ,{<<"unshift">>, <<"Media-Recordings-Name=", RecordingName/binary>>}
     ,{<<"record_session">>, list_to_binary(RecordArgs)}
     ];
 record_call(_Node, _UUID, <<"stop">>, JObj) ->
     RecordingName = case kz_json:get_ne_binary_value(<<"Media-Name">>, JObj) of
-                        'undefined' -> <<"${Media-Recordings[0]}">>;
+                        'undefined' -> <<"${Media-Recordings-Name[0]}">>;
                         MediaName -> ecallmgr_util:recording_filename(MediaName)
                     end,
     {<<"stop_record_session">>, RecordingName}.
