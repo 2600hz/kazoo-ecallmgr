@@ -92,7 +92,7 @@
                       ,expires = ?EXPIRES_MISSING_VALUE :: non_neg_integer() | '_' | '$1'
                       ,from_host :: kz_term:api_ne_binary() | '_'
                       ,from_user = <<"nouser">> :: kz_term:ne_binary() | '_'
-                      ,id :: {kz_term:ne_binary(), kz_term:ne_binary()} | '_' | '$1'
+                      ,id :: {kz_term:ne_binary(), kz_term:ne_binary() | '_'} | '_' | '$1'
                       ,initial = 'true' :: boolean() | '_'
                       ,initial_registration = kz_time:now_s() :: kz_time:gregorian_seconds() | '_'
                       ,last_registration = kz_time:now_s() :: kz_time:gregorian_seconds() | '_' | '$2'

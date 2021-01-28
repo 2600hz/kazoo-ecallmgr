@@ -123,7 +123,6 @@ terminate(_Reason, _State) -> 'ok'.
 code_change(_OldVsn, State, _Extra) ->
     {'ok', State}.
 
-
 -spec handle_query(kz_json:object(), kz_term:proplist()) -> 'ok'.
 handle_query(JObj, _Props) ->
     ServerId = kz_api:server_id(JObj),
