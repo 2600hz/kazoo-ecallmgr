@@ -81,7 +81,9 @@
 -define(CONSUME_OPTIONS, []).
 
 -define(CALL_PARK_FEATURE, "*3").
--record(state, {max_channel_cleanup_ref :: reference()}).
+-record(state, {max_channel_cleanup_ref :: reference()
+               ,destroyed_channel_cleanup_ref :: reference()
+               }).
 -type state() :: #state{}.
 
 
@@ -121,7 +123,7 @@ summary() ->
 summary(Node) when not is_atom(Node) ->
     summary(kz_term:to_atom(Node, 'true'));
 summary(Node) ->
-    MatchSpec = [{#channel{node='$1', _ = '_'}
+    MatchSpec = [{#channel{node='$1', destroyed_ms='undefined', _ = '_'}
                  ,[{'=:=', '$1', {'const', Node}}]
                  ,['$_']
                  }],
@@ -129,7 +131,7 @@ summary(Node) ->
 
 -spec details() -> 'ok'.
 details() ->
-    MatchSpec = [{#channel{_ = '_'}
+    MatchSpec = [{#channel{destroyed_ms='undefined', _ = '_'}
                  ,[]
                  ,['$_']
                  }],
@@ -149,7 +151,10 @@ details(UUID) ->
 show_all() ->
     ets:foldl(fun(Channel, Acc) ->
                       [ecallmgr_fs_channel:to_json(Channel) | Acc]
-              end, [], ?CHANNELS_TBL).
+              end
+             ,[]
+             ,?CHANNELS_TBL
+             ).
 
 -spec per_minute_accounts() -> kz_term:ne_binaries().
 per_minute_accounts() ->
@@ -157,15 +162,29 @@ per_minute_accounts() ->
                           ,account_billing = <<"per_minute">>
                           ,reseller_id = '$2'
                           ,reseller_billing = <<"per_minute">>
-                          ,_ = '_'}
-                 ,[{'andalso', {'=/=', '$1', 'undefined'}, {'=/=', '$2', 'undefined'}}]
+                          ,destroyed_ms='undefined'
+                          ,_ = '_'
+                          }
+                 ,[{'andalso'
+                   ,{'=/=', '$1', 'undefined'}
+                   ,{'=/=', '$2', 'undefined'}
+                   }
+                  ]
                  ,['$$']
                  }
-                ,{#channel{reseller_id = '$1', reseller_billing = <<"per_minute">>, _ = '_'}
+                ,{#channel{reseller_id = '$1'
+                          ,reseller_billing = <<"per_minute">>
+                          ,destroyed_ms='undefined'
+                          , _ = '_'
+                          }
                  ,[{'=/=', '$1', 'undefined'}]
                  ,['$$']
                  }
-                ,{#channel{account_id = '$1', account_billing = <<"per_minute">>, _ = '_'}
+                ,{#channel{account_id = '$1'
+                          ,account_billing = <<"per_minute">>
+                          ,destroyed_ms='undefined'
+                          ,_ = '_'
+                          }
                  ,[{'=/=', '$1', 'undefined'}]
                  ,['$$']
                  }
@@ -178,6 +197,7 @@ per_minute_channels(AccountId) ->
                           ,uuid = '$2'
                           ,reseller_id = AccountId
                           ,reseller_billing = <<"per_minute">>
+                          ,destroyed_ms='undefined'
                           ,_ = '_'
                           }
                  ,[]
@@ -187,6 +207,7 @@ per_minute_channels(AccountId) ->
                           ,uuid = '$2'
                           ,account_id = AccountId
                           ,account_billing = <<"per_minute">>
+                          ,destroyed_ms='undefined'
                           ,_ = '_'
                           }
                  ,[]
@@ -204,8 +225,8 @@ new(#channel{}=Channel) ->
     gen_server:call(?SERVER, {'new_channel', Channel}).
 
 -spec destroy(kz_term:ne_binary(), atom()) -> 'ok'.
-destroy(UUID, Node) ->
-    gen_server:cast(?SERVER, {'destroy_channel', UUID, Node}).
+destroy(UUID, _Node) ->
+    update(UUID, #channel.destroyed_ms, kz_time:now_ms()).
 
 %% @doc Updates UUID channel record
 -spec update(kz_term:ne_binary(), channel()) -> 'ok'.
@@ -234,6 +255,7 @@ match_presence(PresenceId) ->
     MatchSpec = [{#channel{uuid = '$1'
                           ,presence_id = '$2'
                           ,node = '$3'
+                          ,destroyed_ms='undefined'
                           , _ = '_'
                           }
                  ,[{'=:=', '$2', {'const', PresenceId}}]
@@ -411,7 +433,9 @@ init([]) ->
                                ,{'keypos', #channel.uuid}
                                ,{'read_concurrency', 'true'}
                                ]),
-    {'ok', #state{max_channel_cleanup_ref=start_cleanup_ref()}}.
+    {'ok', #state{max_channel_cleanup_ref=start_cleanup_ref()
+                 ,destroyed_channel_cleanup_ref=start_destroyed_cleanup_ref()
+                 }}.
 
 -define(CLEANUP_TIMEOUT
        ,kapps_config:get_integer(?APP_NAME, <<"max_channel_cleanup_timeout_ms">>, ?MILLISECONDS_IN_MINUTE)
@@ -420,6 +444,14 @@ init([]) ->
 -spec start_cleanup_ref() -> reference().
 start_cleanup_ref() ->
     erlang:start_timer(?CLEANUP_TIMEOUT, self(), 'ok').
+
+-define(DESTROYED_CLEANUP_TIMEOUT
+       ,kapps_config:get_integer(?APP_NAME, <<"destroyed_channel_cleanup_ms">>, 5 * ?MILLISECONDS_IN_SECOND)
+       ).
+
+-spec start_destroyed_cleanup_ref() -> reference().
+start_destroyed_cleanup_ref() ->
+    erlang:start_timer(?DESTROYED_CLEANUP_TIMEOUT, self(), 'ok').
 
 %%------------------------------------------------------------------------------
 %% @doc Handling call messages.
@@ -503,6 +535,7 @@ handle_cast({'flush_node', Node}, State) ->
 
     LocalChannelsMS = [{#channel{node = '$1'
                                 ,handling_locally='true'
+                                ,destroyed_ms='undefined'
                                 ,_ = '_'
                                 }
                        ,[{'=:=', '$1', {'const', Node}}]
@@ -538,6 +571,9 @@ handle_cast(_Req, State) ->
 handle_info({'timeout', Ref, _Msg}, #state{max_channel_cleanup_ref=Ref}=State) ->
     maybe_cleanup_old_channels(),
     {'noreply', State#state{max_channel_cleanup_ref=start_cleanup_ref()}};
+handle_info({'timeout', Ref, _Msg}, #state{destroyed_channel_cleanup_ref=Ref}=State) ->
+    cleanup_destroyed_channels(),
+    {'noreply', State#state{destroyed_channel_cleanup_ref=start_destroyed_cleanup_ref()}};
 handle_info(_Msg, State) ->
     lager:debug("unhandled message: ~p", [_Msg]),
     {'noreply', State}.
@@ -583,7 +619,7 @@ code_change(_OldVsn, State, _Extra) ->
           {'ok', kz_json:objects()} |
           {'error', 'not_found'}.
 find_by_auth_id(AuthorizingId) ->
-    MatchSpec = [{#channel{authorizing_id = '$1', _ = '_'}
+    MatchSpec = [{#channel{authorizing_id = '$1', destroyed_ms='undefined', _ = '_'}
                  ,[{'=:=', '$1', {'const', AuthorizingId}}]
                  ,['$_']}
                 ],
@@ -597,6 +633,7 @@ find_by_auth_id(AuthorizingId) ->
 -spec has_channels_for_owner(kz_term:ne_binary()) -> boolean().
 has_channels_for_owner(OwnerId) ->
     MatchSpec = [{#channel{owner_id = '$1'
+                          ,destroyed_ms='undefined'
                           ,_ = '_'
                           }
                  ,[]
@@ -615,7 +652,9 @@ find_by_authorizing_id(AuthIds) ->
 find_by_authorizing_id([], Acc) -> Acc;
 find_by_authorizing_id([AuthId|AuthIds], Acc) ->
     Pattern = #channel{authorizing_id=AuthId
-                      ,_='_'},
+                      ,destroyed_ms='undefined'
+                      ,_='_'
+                      },
     case ets:match_object(?CHANNELS_TBL, Pattern) of
         [] -> find_by_authorizing_id(AuthIds, Acc);
         Channels ->
@@ -628,7 +667,9 @@ find_by_authorizing_id([AuthId|AuthIds], Acc) ->
 -spec find_by_user_realm(kz_term:api_binary() | kz_term:ne_binaries(), kz_term:ne_binary()) -> [] | kz_term:proplist().
 find_by_user_realm('undefined', Realm) ->
     Pattern = #channel{realm=kz_term:to_lower_binary(Realm)
-                      ,_='_'},
+                      ,destroyed_ms='undefined'
+                      ,_='_'
+                      },
     case ets:match_object(?CHANNELS_TBL, Pattern) of
         [] -> [];
         Channels ->
@@ -640,7 +681,9 @@ find_by_user_realm(<<?CALL_PARK_FEATURE, _/binary>>=Username, Realm) ->
     Pattern = #channel{destination=kz_term:to_lower_binary(Username)
                       ,realm=kz_term:to_lower_binary(Realm)
                       ,other_leg='undefined'
-                      ,_='_'},
+                      ,destroyed_ms='undefined'
+                      ,_='_'
+                      },
     case ets:match_object(?CHANNELS_TBL, Pattern) of
         [] -> [];
         Channels ->
@@ -652,7 +695,9 @@ find_by_user_realm(Usernames, Realm) when is_list(Usernames) ->
     ETSUsernames = build_matchspec_ors(Usernames),
     MatchSpec = [{#channel{username='$1'
                           ,realm=kz_term:to_lower_binary(Realm)
-                          ,_ = '_'}
+                          ,destroyed_ms='undefined'
+                          ,_ = '_'
+                          }
                  ,[ETSUsernames]
                  ,['$_']
                  }],
@@ -666,7 +711,9 @@ find_by_user_realm(Usernames, Realm) when is_list(Usernames) ->
 find_by_user_realm(Username, Realm) ->
     Pattern = #channel{username=kz_term:to_lower_binary(Username)
                       ,realm=kz_term:to_lower_binary(Realm)
-                      ,_='_'},
+                      ,destroyed_ms='undefined'
+                      ,_='_'
+                      },
     case ets:match_object(?CHANNELS_TBL, Pattern) of
         [] -> [];
         Channels ->
@@ -679,7 +726,7 @@ find_by_user_realm(Username, Realm) ->
           {'ok', kz_json:objects()} |
           {'error', 'not_found'}.
 find_account_channels(<<"all">>) ->
-    case ets:match_object(?CHANNELS_TBL, #channel{_='_'}) of
+    case ets:match_object(?CHANNELS_TBL, #channel{destroyed_ms='undefined', _='_'}) of
         [] -> {'error', 'not_found'};
         Channels ->
             {'ok', [ecallmgr_fs_channel:to_json(Channel)
@@ -687,12 +734,18 @@ find_account_channels(<<"all">>) ->
                    ]}
     end;
 find_account_channels(AccountId) ->
-    case ets:match_object(?CHANNELS_TBL, #channel{account_id=AccountId, _='_'}) of
+    case ets:match_object(?CHANNELS_TBL, #channel{account_id=AccountId
+                                                 ,destroyed_ms='undefined'
+                                                 , _='_'
+                                                 }
+                         )
+    of
         [] -> {'error', 'not_found'};
         Channels ->
             {'ok', [ecallmgr_fs_channel:to_json(Channel)
                     || Channel <- Channels
-                   ]}
+                   ]
+            }
     end.
 
 -spec build_matchspec_ors(kz_term:ne_binaries()) -> tuple() | 'false'.
@@ -708,12 +761,12 @@ build_matchspec_ors_fold(Username, Acc) ->
 
 -spec query_channels(kz_term:ne_binaries(), kz_term:api_binary()) -> kz_json:object().
 query_channels(Fields, 'undefined') ->
-    query_channels(ets:match_object(?CHANNELS_TBL, #channel{_='_'}, 1)
+    query_channels(ets:match_object(?CHANNELS_TBL, #channel{destroyed_ms='undefined', _='_'}, 1)
                   ,Fields
                   ,kz_json:new()
                   );
 query_channels(Fields, CallId) ->
-    query_channels(ets:match_object(?CHANNELS_TBL, #channel{uuid=CallId, _='_'}, 1)
+    query_channels(ets:match_object(?CHANNELS_TBL, #channel{uuid=CallId, destroyed_ms='undefined', _='_'}, 1)
                   ,Fields
                   ,kz_json:new()
                   ).
@@ -722,14 +775,18 @@ query_channels(Fields, CallId) ->
           kz_json:object().
 query_channels('$end_of_table', _, Channels) -> Channels;
 query_channels({[#channel{uuid=CallId}=Channel], Continuation}
-              ,<<"all">>, Channels) ->
+              ,<<"all">>
+              ,Channels
+              ) ->
     JObj = ecallmgr_fs_channel:to_api_json(Channel),
     query_channels(ets:match_object(Continuation)
                   ,<<"all">>
                   ,kz_json:set_value(CallId, JObj, Channels)
                   );
 query_channels({[#channel{uuid=CallId}=Channel], Continuation}
-              ,Fields, Channels) ->
+              ,Fields
+              ,Channels
+              ) ->
     ChannelProps = ecallmgr_fs_channel:to_api_props(Channel),
     JObj = kz_json:from_list(
              [{Field, props:get_value(Field, ChannelProps)}
@@ -760,9 +817,12 @@ print_summary({[#channel{uuid=UUID
                         ,direction=Direction
                         ,destination=Destination
                         ,account_id=AccountId
-                        }]
-              ,Continuation}
-             ,Count) ->
+                        }
+               ]
+              ,Continuation
+              }
+             ,Count
+             ) ->
     io:format(?SUMMARY_HEADER
              ,[UUID, Node, Direction, Destination, AccountId]
              ),
@@ -870,6 +930,36 @@ maybe_cleanup_old_channels() ->
             'ok'
     end.
 
+%% @doc cleanup channels destroyed a bit ago
+
+%% Since ETS doesn't permit secondary indexes, it will be interesting
+%% to watch how this cleanup performace degrades as sustained channels
+%% and destroyed channels build up and are cleaned.
+-spec cleanup_destroyed_channels() -> 'ok'.
+cleanup_destroyed_channels() ->
+    %% remove channels destroyed 3s ago or older since authz/route
+    %% responses could take that long to return
+    StartTime = kz_time:start_time(),
+    ThenMs = kz_time:now_ms() - (3 * ?MILLISECONDS_IN_SECOND),
+    MatchSpec = [{#channel{destroyed_ms='$1'
+                          ,_ = '_'
+                          }
+                 ,[{'andalso'
+                   ,{'is_integer', '$1'}
+                   ,{'<', '$1', {'const', ThenMs}}
+                   }
+                  ]
+                 ,['true']
+                 }],
+    Deleted = ets:select_delete(?CHANNELS_TBL, MatchSpec),
+    maybe_log_deleted(Deleted, StartTime).
+
+maybe_log_deleted(0, _) -> 'ok';
+maybe_log_deleted(N, StartTime) ->
+    lager:debug("cleaned up ~p destroyed channel records in ~pms"
+               ,[N, kz_time:elapsed_ms(StartTime)]
+               ).
+
 -spec cleanup_old_channels() -> non_neg_integer().
 cleanup_old_channels() ->
     cleanup_old_channels(max_channel_uptime()).
@@ -906,7 +996,8 @@ hangup_old_channels(OldChannels) ->
 -spec hangup_old_channel(old_channel()) -> 'ok'.
 hangup_old_channel([UUID, Node, Started]) ->
     lager:debug("killing channel ~s on ~s, started ~s"
-               ,[UUID, Node, kz_time:pretty_print_datetime(Started)]),
+               ,[UUID, Node, kz_time:pretty_print_datetime(Started)]
+               ),
     freeswitch:api(Node, 'uuid_kill', UUID).
 
 -spec delete_and_maybe_disconnect(atom(), kz_term:ne_binary(), [channel()]) -> 'ok' | 'true'.
@@ -922,13 +1013,12 @@ delete_and_maybe_disconnect(Node, UUID, []) ->
 
 -spec maybe_update_channel(kz_term:ne_binary(), channel()) -> 'ok'.
 maybe_update_channel(UUID, Channel) ->
-    try ets:lookup_element(?CHANNELS_TBL, UUID, #channel.uuid) of
-        UUID ->
+    case ets:lookup(?CHANNELS_TBL, UUID) of
+        [] ->
+            lager:info("channel ~s missing, not updating", [UUID]);
+        [#channel{uuid=UUID, destroyed_ms='undefined'}] ->
             'true' = ets:insert(?CHANNELS_TBL, Channel),
-            lager:debug("updated channel ~s", [UUID])
-    catch
-        _:_ ->
-            lager:info("channel ~s missing, not updating with ~p"
-                      ,[UUID, ecallmgr_fs_channel:to_json(Channel)]
-                      )
+            lager:debug("updated channel ~s", [UUID]);
+        [#channel{uuid=UUID, destroyed_ms=_DestroyedMs}] ->
+            lager:info("channel ~s destroyed at ~p, not updating", [UUID, _DestroyedMs])
     end.

@@ -108,6 +108,7 @@
                  ,from :: kz_term:api_binary() | '_'
                  ,to :: kz_term:api_binary() | '_'
                  ,switch_url :: kz_term:api_binary() | '_'
+                 ,destroyed_ms :: kz_term:api_integer() | '$1' | '_'
                  }).
 
 -type channel() :: #channel{}.
