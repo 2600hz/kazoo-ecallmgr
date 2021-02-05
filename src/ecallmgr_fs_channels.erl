@@ -27,7 +27,7 @@
 -export([flush_node/1]).
 -export([new/1]).
 -export([destroy/2]).
--export([update/2, update/3, updates/2]).
+-export([update/3, updates/2]).
 -export([cleanup_old_channels/0, cleanup_old_channels/1
         ,max_channel_uptime/0
         ,set_max_channel_uptime/1, set_max_channel_uptime/2
@@ -207,18 +207,20 @@ new(#channel{}=Channel) ->
 destroy(UUID, Node) ->
     gen_server:cast(?SERVER, {'destroy_channel', UUID, Node}).
 
-%% @doc Updates UUID channel record
--spec update(kz_term:ne_binary(), channel()) -> 'ok'.
-update(UUID, Channel) ->
-    gen_server:call(?SERVER, {'update_channel', UUID, Channel}).
-
 -spec update(kz_term:ne_binary(), pos_integer(), any()) -> 'ok'.
 update(UUID, Key, Value) ->
     updates(UUID, [{Key, Value}]).
 
 -spec updates(kz_term:ne_binary(), channel_updates()) -> 'ok'.
 updates(UUID, Updates) ->
-    gen_server:cast(?SERVER, {'channel_updates', UUID, Updates}).
+    gen_server:cast(?SERVER, {'channel_updates', UUID, remove_unneeded(Updates)}).
+
+-spec remove_unneeded(channel_updates()) -> channel_updates().
+remove_unneeded(Updates) ->
+    [KV || {Key, Value}=KV <- Updates,
+           Key =/= #channel.uuid, % ets:update_element will fail if an update is also the key
+           Value =/= 'undefined'  % only needed updates are passed to gen_server
+    ].
 
 -spec format_updates(kz_term:proplist()) -> kz_term:ne_binary().
 format_updates(Updates) ->
@@ -435,14 +437,6 @@ handle_call({'new_channel', #channel{uuid=UUID}=Channel}, _, State) ->
             lager:debug("channel ~s already exists", [UUID]),
             {'reply', {'error', 'channel_exists'}, State}
     end;
-handle_call({'update_channel', UUID, Channel}, _, State) ->
-    maybe_update_channel(UUID, Channel),
-    {'reply', 'ok', State};
-handle_call({'channel_updates', _UUID, []}, _, State) ->
-    {'reply', 'ok', State};
-handle_call({'channel_updates', UUID, Update}, _, State) ->
-    ets:update_element(?CHANNELS_TBL, UUID, Update),
-    {'reply', 'ok', State};
 handle_call(_, _, State) ->
     {'reply', {'error', 'not_implemented'}, State}.
 
@@ -919,16 +913,3 @@ delete_and_maybe_disconnect(Node, UUID, [_Channel]) ->
     ets:delete(?CHANNELS_TBL, UUID);
 delete_and_maybe_disconnect(Node, UUID, []) ->
     lager:debug("channel ~s not found during sync delete with ~s", [UUID, Node]).
-
--spec maybe_update_channel(kz_term:ne_binary(), channel()) -> 'ok'.
-maybe_update_channel(UUID, Channel) ->
-    try ets:lookup_element(?CHANNELS_TBL, UUID, #channel.uuid) of
-        UUID ->
-            'true' = ets:insert(?CHANNELS_TBL, Channel),
-            lager:debug("updated channel ~s", [UUID])
-    catch
-        _:_ ->
-            lager:info("channel ~s missing, not updating with ~p"
-                      ,[UUID, ecallmgr_fs_channel:to_json(Channel)]
-                      )
-    end.
