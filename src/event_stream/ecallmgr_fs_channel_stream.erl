@@ -78,7 +78,7 @@ channel_sync(#{node := Node, call_id := UUID, payload := JObj}) ->
         andalso kz_json:get_ne_binary_value(<<"Event-PID">>, JObj)
     of
         'false' -> lager:warning("sync not for this node ~s / ~s", [Node, EventNode]);
-        'undefined' -> ecallmgr_fs_channel:update(Node, UUID, JObj);
+        'undefined' -> ecallmgr_fs_channel:new_or_update(Node, UUID, JObj);
         Pid -> kz_term:to_pid(Pid) ! {'channel_sync', JObj}
     end.
 

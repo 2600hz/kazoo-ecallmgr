@@ -27,6 +27,7 @@
         ,get_other_leg/2
         ,new/3
         ,update/3
+        ,new_or_update/3
         ]).
 -export([to_json/1
         ,to_props/1
@@ -443,11 +444,18 @@ handling_locally('undefined', 'undefined') -> 'false';
 handling_locally(Node, _X) ->
     Node =:= kz_term:to_binary(node()).
 
+%% @doc for CHANNEL_CREATE, insert new record
 -spec new(atom(), kz_term:ne_binary(), kz_json:object()) -> 'ok'.
 new(Node, UUID, JObj) ->
     lager:debug("adding new channel ~s", [UUID]),
     ecallmgr_fs_channels:new(jobj_to_record(Node, UUID, JObj)).
 
+%% @doc for CHANNEL_SYNC, insert or update the channel record
+-spec new_or_update(atom(), kz_term:ne_binary(), kz_json:object()) -> 'ok'.
+new_or_update(Node, UUID, JObj) ->
+    ecallmgr_fs_channels:new_or_update(jobj_to_record(Node, UUID, JObj)).
+
+%% @doc for all other events, only update the channel record if the record exists
 -spec update(atom(), kz_term:ne_binary(), kz_json:object()) -> 'ok'.
 update(Node, UUID, JObj) ->
     ecallmgr_fs_channels:updates(UUID, jobj_to_updates(Node, UUID, JObj)).

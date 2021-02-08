@@ -25,7 +25,9 @@
 -export([per_minute_accounts/0]).
 -export([per_minute_channels/1]).
 -export([flush_node/1]).
--export([new/1]).
+-export([new/1
+        ,new_or_update/1
+        ]).
 -export([destroy/2]).
 -export([update/3, updates/2]).
 -export([cleanup_old_channels/0, cleanup_old_channels/1
@@ -202,6 +204,10 @@ flush_node(Node) ->
 -spec new(channel()) -> 'ok'.
 new(#channel{}=Channel) ->
     gen_server:call(?SERVER, {'new_channel', Channel}).
+
+-spec new_or_update(channel()) -> 'ok'.
+new_or_update(#channel{}=Channel) ->
+    gen_server:call(?SERVER, {'new_or_update', Channel}).
 
 -spec destroy(kz_term:ne_binary(), atom()) -> 'ok'.
 destroy(UUID, Node) ->
@@ -437,6 +443,10 @@ handle_call({'new_channel', #channel{uuid=UUID}=Channel}, _, State) ->
             lager:debug("channel ~s already exists", [UUID]),
             {'reply', {'error', 'channel_exists'}, State}
     end;
+handle_call({'new_or_update', #channel{uuid=UUID}=Channel}, _, State) ->
+    'true' = ets:insert(?CHANNELS_TBL, Channel),
+    lager:debug("channel ~s added/updated", [UUID]),
+    {'reply', 'ok', State};
 handle_call(_, _, State) ->
     {'reply', {'error', 'not_implemented'}, State}.
 
