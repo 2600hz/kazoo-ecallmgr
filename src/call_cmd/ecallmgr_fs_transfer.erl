@@ -141,7 +141,10 @@ transfer_referred(UUID, <<"-bleg">>) ->
             'undefined';
         {'ok', #channel{username=Username
                        ,realm=Realm
-                       }} -> <<"<sip:", Username/binary, "@", Realm/binary, ">">>;
+                       ,account_id=AccountId
+                       ,authorizing_id=AuthorizingId
+                       }} ->
+            list_to_binary(["<sip:", Username, "@", Realm, ">;endpoint_id=", AuthorizingId,";account_id=", AccountId]);
         _Else -> 'undefined'
     end;
 transfer_referred(UUID, _) ->
@@ -151,7 +154,10 @@ transfer_referred(UUID, _) ->
             'undefined';
         {'ok', #channel{username=Username
                        ,realm=Realm
-                       }} -> <<"<sip:", Username/binary, "@", Realm/binary, ">">>;
+                       ,account_id=AccountId
+                       ,authorizing_id=AuthorizingId
+                       }} ->
+            list_to_binary(["<sip:", Username, "@", Realm, ">;endpoint_id=", AuthorizingId, ";account_id=", AccountId]);
         _Else -> 'undefined'
     end.
 
