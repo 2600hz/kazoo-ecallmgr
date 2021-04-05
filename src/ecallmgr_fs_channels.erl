@@ -631,7 +631,7 @@ find_by_authorizing_id([AuthId|AuthIds], Acc) ->
 
 -spec find_by_user_realm(kz_term:api_binary() | kz_term:ne_binaries(), kz_term:ne_binary()) -> [] | kz_term:proplist().
 find_by_user_realm('undefined', Realm) ->
-    Pattern = #channel{realm=kz_term:to_lower_binary(Realm)
+    Pattern = #channel{realm=kz_term:to_binary(Realm)
                       ,_='_'},
     case ets:match_object(?CHANNELS_TBL, Pattern) of
         [] -> [];
@@ -641,8 +641,8 @@ find_by_user_realm('undefined', Realm) ->
             ]
     end;
 find_by_user_realm(<<?CALL_PARK_FEATURE, _/binary>>=Username, Realm) ->
-    Pattern = #channel{destination=kz_term:to_lower_binary(Username)
-                      ,realm=kz_term:to_lower_binary(Realm)
+    Pattern = #channel{destination=kz_term:to_binary(Username)
+                      ,realm=kz_term:to_binary(Realm)
                       ,other_leg='undefined'
                       ,_='_'},
     case ets:match_object(?CHANNELS_TBL, Pattern) of
@@ -655,7 +655,7 @@ find_by_user_realm(<<?CALL_PARK_FEATURE, _/binary>>=Username, Realm) ->
 find_by_user_realm(Usernames, Realm) when is_list(Usernames) ->
     ETSUsernames = build_matchspec_ors(Usernames),
     MatchSpec = [{#channel{username='$1'
-                          ,realm=kz_term:to_lower_binary(Realm)
+                          ,realm=kz_term:to_binary(Realm)
                           ,_ = '_'}
                  ,[ETSUsernames]
                  ,['$_']
@@ -668,8 +668,8 @@ find_by_user_realm(Usernames, Realm) when is_list(Usernames) ->
             ]
     end;
 find_by_user_realm(Username, Realm) ->
-    Pattern = #channel{username=kz_term:to_lower_binary(Username)
-                      ,realm=kz_term:to_lower_binary(Realm)
+    Pattern = #channel{username=kz_term:to_binary(Username)
+                      ,realm=kz_term:to_binary(Realm)
                       ,_='_'},
     case ets:match_object(?CHANNELS_TBL, Pattern) of
         [] -> [];
@@ -708,7 +708,7 @@ build_matchspec_ors(Usernames) ->
 
 -spec build_matchspec_ors_fold(kz_term:ne_binary(), tuple() | 'false') -> tuple().
 build_matchspec_ors_fold(Username, Acc) ->
-    {'or', {'=:=', '$1', kz_term:to_lower_binary(Username)}, Acc}.
+    {'or', {'=:=', '$1', kz_term:to_binary(Username)}, Acc}.
 
 -spec query_channels(kz_term:ne_binaries(), kz_term:api_binary()) -> kz_json:object().
 query_channels(Fields, 'undefined') ->
