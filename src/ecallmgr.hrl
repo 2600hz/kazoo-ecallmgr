@@ -108,6 +108,8 @@
                  ,from :: kz_term:api_binary() | '_'
                  ,to :: kz_term:api_binary() | '_'
                  ,switch_url :: kz_term:api_binary() | '_'
+                 ,user_to_user :: kz_term:api_object() | '_'
+                 ,p_intrinsics :: kz_term:api_object() | '_'
                  }).
 
 -type channel() :: #channel{}.

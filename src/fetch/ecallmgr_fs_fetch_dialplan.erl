@@ -47,8 +47,13 @@ dialplan(#{node := Node, fetch_id := FetchId, payload := FetchJObj}=Map) ->
                ,fun(M) -> M#{callback => fun process/1} end
                ,fun(M) -> M#{options => []} end
                ,fun(M) -> M#{start_result => ecallmgr_call_control_sup:start_proc(M)} end
+               ,fun maybe_set_sip_header_info/1
                ],
     {'ok', kz_maps:exec(Routines, Map)}.
+
+-spec maybe_set_sip_header_info(dialplan_context()) -> 'ok'.
+maybe_set_sip_header_info(DialplanMap) ->
+    ecallmgr_fs_channel:maybe_set_sip_header(DialplanMap).
 
 -spec process(dialplan_context()) -> {'ok', dialplan_context()}.
 process(#{payload := FetchJObj, channel := Channel}=Map) ->

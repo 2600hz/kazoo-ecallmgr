@@ -52,6 +52,8 @@
                          ,[<<"Custom-Channel-Vars">>, <<"Confirm-Read-Timeout">>]
                          ,[<<"Custom-Channel-Vars">>, <<"Confirm-Timeout">>]
                          ,<<"Account-ID">>
+                         ,<<"User-to-User">>
+                         ,<<"P-Intrinsics">>
                          ]).
 
 -spec call_command(atom(), kz_term:ne_binary(), kz_json:object()) -> {'error', binary()} | {binary(), kz_term:proplist()}.

@@ -37,6 +37,7 @@
 -export([to_api_json/1
         ,to_api_props/1
         ]).
+-export([maybe_set_sip_header/1]).
 
 -compile([{'no_auto_import', [node/1]}]).
 
@@ -237,6 +238,8 @@ to_api_json(Channel) ->
 to_api_props(#channel{}=Channel) ->
     props:filter_undefined(
       [{<<"Account-Billing">>, Channel#channel.account_billing}
+      ,{<<"User-to-User">>, Channel#channel.user_to_user}
+      ,{<<"P-Intrinsics">>, Channel#channel.p_intrinsics}
       ,{<<"Account-ID">>, Channel#channel.account_id}
       ,{<<"Answered">>, Channel#channel.answered}
       ,{<<"Authorizing-ID">>, Channel#channel.authorizing_id}
@@ -382,6 +385,7 @@ update_channel_property({Index, Value}, Channel) ->
 jobj_to_updates(Node, UUID, JObj) ->
     CCVs = kz_json:get_json_value(<<"Custom-Channel-Vars">>, JObj, kz_json:new()),
     CAVs = kz_json:get_json_value(<<"Custom-Application-Vars">>, JObj, kz_json:new()),
+
     OtherLeg = kz_json:get_ne_binary_value(<<"Other-Leg-Call-ID">>, JObj),
     Profile = kz_json:get_ne_binary_value(<<"Caller-Profile">>, JObj, ?DEFAULT_FS_PROFILE),
     props:filter_undefined([{#channel.uuid, UUID}
@@ -459,3 +463,33 @@ new_or_update(Node, UUID, JObj) ->
 -spec update(atom(), kz_term:ne_binary(), kz_json:object()) -> 'ok'.
 update(Node, UUID, JObj) ->
     ecallmgr_fs_channels:updates(UUID, jobj_to_updates(Node, UUID, JObj)).
+
+-spec maybe_set_sip_header(map()) -> 'ok'.
+maybe_set_sip_header(DialplanMap) ->
+    {Payload} = maps:get('payload', DialplanMap),
+    {CustomSIPHeaders} = proplists:get_value(<<"Custom-SIP-Headers">>, Payload),
+    {CustomChannelVars} = proplists:get_value(<<"Custom-Channel-Vars">>, Payload),
+    PresenceId = proplists:get_value(<<"Presence-ID">>, CustomChannelVars),
+    [{UUID, _}] = ecallmgr_fs_channels:match_presence(PresenceId),
+    case {maybe_get_user_to_user_header(CustomSIPHeaders), maybe_get_p_intrinsics_header(CustomSIPHeaders)} of
+        {'undefined', 'undefined'} ->
+            'ok';
+
+        {'undefined', PIntrinsics} ->
+            ecallmgr_fs_channels:update(UUID, #channel.p_intrinsics, PIntrinsics);
+
+        {UserToUser, 'undefined'} ->
+            ecallmgr_fs_channels:update(UUID, #channel.user_to_user, UserToUser);
+
+        {UserToUser, PIntrinsics} ->
+            ecallmgr_fs_channels:update(UUID, #channel.user_to_user, UserToUser),
+            ecallmgr_fs_channels:update(UUID, #channel.p_intrinsics, PIntrinsics)
+    end.
+
+-spec maybe_get_user_to_user_header(kz_term:api_object()) -> kz_term:api_object() | 'undefined'.
+maybe_get_user_to_user_header(CustomSIPHeaders) ->
+    proplists:get_value(<<"User-to-User">>, CustomSIPHeaders, 'undefined').
+
+-spec maybe_get_p_intrinsics_header(kz_term:api_object()) -> kz_term:api_object() | 'undefined'.
+maybe_get_p_intrinsics_header(CustomSIPHeaders) ->
+    proplists:get_value(<<"P-Intrinsics">>, CustomSIPHeaders, 'undefined').
