@@ -464,11 +464,10 @@ update(Node, UUID, JObj) ->
     ecallmgr_fs_channels:updates(UUID, jobj_to_updates(Node, UUID, JObj)).
 
 -spec maybe_set_sip_header(map()) -> 'ok'.
-maybe_set_sip_header(DialplanMap) ->
-    {Payload} = maps:get('payload', DialplanMap),
-    {CustomSIPHeaders} = proplists:get_value(<<"Custom-SIP-Headers">>, Payload),
-    {CustomChannelVars} = proplists:get_value(<<"Custom-Channel-Vars">>, Payload),
-    PresenceId = proplists:get_value(<<"Presence-ID">>, CustomChannelVars),
+maybe_set_sip_header(Payload) ->
+    CustomSIPHeaders = kz_json:get_value(<<"Custom-SIP-Headers">>, Payload),
+    CustomChannelVars = kz_json:get_value(<<"Custom-Channel-Vars">>, Payload),
+    PresenceId = kz_json:get_value(<<"Presence-ID">>, CustomChannelVars),
     [{UUID, _}] = ecallmgr_fs_channels:match_presence(PresenceId),
     case {maybe_get_user_to_user_header(CustomSIPHeaders), maybe_get_p_intrinsics_header(CustomSIPHeaders)} of
         {'undefined', 'undefined'} ->
@@ -487,8 +486,8 @@ maybe_set_sip_header(DialplanMap) ->
 
 -spec maybe_get_user_to_user_header(kz_term:api_object()) -> kz_term:api_object() | 'undefined'.
 maybe_get_user_to_user_header(CustomSIPHeaders) ->
-    proplists:get_value(<<"User-to-User">>, CustomSIPHeaders, 'undefined').
+    kz_json:get_value(<<"User-to-User">>, CustomSIPHeaders, 'undefined').
 
 -spec maybe_get_p_intrinsics_header(kz_term:api_object()) -> kz_term:api_object() | 'undefined'.
 maybe_get_p_intrinsics_header(CustomSIPHeaders) ->
-    proplists:get_value(<<"P-Intrinsics">>, CustomSIPHeaders, 'undefined').
+    kz_json:get_value(<<"P-Intrinsics">>, CustomSIPHeaders, 'undefined').
