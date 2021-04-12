@@ -385,7 +385,6 @@ update_channel_property({Index, Value}, Channel) ->
 jobj_to_updates(Node, UUID, JObj) ->
     CCVs = kz_json:get_json_value(<<"Custom-Channel-Vars">>, JObj, kz_json:new()),
     CAVs = kz_json:get_json_value(<<"Custom-Application-Vars">>, JObj, kz_json:new()),
-
     OtherLeg = kz_json:get_ne_binary_value(<<"Other-Leg-Call-ID">>, JObj),
     Profile = kz_json:get_ne_binary_value(<<"Caller-Profile">>, JObj, ?DEFAULT_FS_PROFILE),
     props:filter_undefined([{#channel.uuid, UUID}
