@@ -95,6 +95,11 @@ enforce_privacy(Node, UUID, JObj) ->
           fs_app() | fs_apps() |
           {'return', 'error' | kz_term:ne_binary()} |
           {'error', kz_term:ne_binary()}.
+get_fs_app(_Node, _UUID, JObj, <<"wait_for_answer">>) ->
+    case kapi_dialplan:wait_for_answer_v(JObj) of
+        'false' -> {'error', <<"wait for answer failed to execute as JObj did not validate">>};
+        'true' -> {<<"wait_for_answer">>, kz_api:msg_id(JObj)}
+    end;
 get_fs_app(_Node, _UUID, JObj, <<"noop">>) ->
     case kapi_dialplan:noop_v(JObj) of
         'false' -> {'error', <<"noop failed to execute as JObj did not validate">>};
