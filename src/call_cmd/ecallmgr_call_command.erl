@@ -160,10 +160,10 @@ get_fs_app(_Node, UUID, JObj, <<"play_and_collect_digits">>) ->
     case kapi_dialplan:play_and_collect_digits_v(JObj) of
         'false' -> {'error', <<"play_and_collect_digits failed to execute as JObj did not validate">>};
         'true' ->
-            Min = kz_json:get_value(<<"Minimum-Digits">>, JObj),
-            Max = kz_json:get_value(<<"Maximum-Digits">>, JObj),
-            Timeout = kz_json:get_value(<<"Timeout">>, JObj),
-            Terminators = kz_json:get_value(<<"Terminators">>, JObj),
+            Min = kz_json:get_ne_binary_value(<<"Minimum-Digits">>, JObj),
+            Max = kz_json:get_ne_binary_value(<<"Maximum-Digits">>, JObj),
+            Timeout = kz_json:get_ne_binary_value(<<"Timeout">>, JObj),
+            Terminators = kz_json:get_ne_binary_value(<<"Terminators">>, JObj),
             Media = <<$', (ecallmgr_util:media_path(kz_json:get_ne_binary_value(<<"Media-Name">>, JObj), 'new', UUID, JObj))/binary, $'>>,
             InvalidMedia = <<$', (ecallmgr_util:media_path(kz_json:get_ne_binary_value(<<"Failed-Media-Name">>, JObj), 'new', UUID, JObj))/binary, $'>>,
             Tries = kz_json:get_ne_binary_value(<<"Media-Tries">>, JObj),
