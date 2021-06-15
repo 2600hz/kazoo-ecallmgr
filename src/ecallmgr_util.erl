@@ -649,9 +649,19 @@ maybe_sanitize_fs_value(<<"Failover-Reasons">>, Val) when is_list(Val) ->
     kz_binary:join(Val, <<",">>);
 maybe_sanitize_fs_value(Key, Val) when not is_binary(Key) ->
     maybe_sanitize_fs_value(kz_term:to_binary(Key), Val);
+maybe_sanitize_fs_value(_Key, List) when is_list(List) ->
+    kz_binary:join(lists:map(fun sanitize_fs_value/1, List), <<";">>);
 maybe_sanitize_fs_value(Key, Val) when not is_binary(Val) ->
-    maybe_sanitize_fs_value(Key, kz_term:to_binary(Val));
+    case kz_json:is_valid_json_object(Val) of
+        true -> maybe_sanitize_fs_value(Key, kz_json:to_proplist(Val));
+        false -> maybe_sanitize_fs_value(Key, kz_term:to_binary(Val))
+    end;
 maybe_sanitize_fs_value(_, Val) -> Val.
+
+sanitize_fs_value({Key, Val}) ->
+    list_to_binary([Key, "=", Val]);
+sanitize_fs_value(Val) ->
+    kz_term:to_binary(Val).
 
 %%------------------------------------------------------------------------------
 %% @doc takes endpoints (/sofia/foo/bar), and optionally a caller id name/num
