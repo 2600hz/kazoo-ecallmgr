@@ -705,15 +705,11 @@ publish_originate_resp(ServerId, JObj) ->
 -spec publish_originate_resp(kz_term:api_binary(), kz_json:object(), kz_term:ne_binary()) -> 'ok'.
 publish_originate_resp('undefined', _JObj, _UUID) -> 'ok';
 publish_originate_resp(ServerId, JObj, UUID) ->
-    ExtendedData = case ecallmgr_fs_channels:api_status(UUID) of
-                       {'error', _} -> [];
-                       {'ok', Data} -> Data
-                   end,
     Resp = kz_json:set_values([{<<"Event-Category">>, <<"resource">>}
                               ,{<<"Application-Response">>, <<"SUCCESS">>}
                               ,{<<"Event-Name">>, <<"originate_resp">>}
                               ,{<<"Call-ID">>, UUID}
-                              | ExtendedData
+                              | get_extended_data(UUID)
                               ]
                              ,JObj
                              ),
@@ -722,16 +718,12 @@ publish_originate_resp(ServerId, JObj, UUID) ->
 -spec publish_originate_resp(kz_term:api_binary(), kz_json:object(), kz_term:ne_binary(), kz_term:ne_binary()) -> 'ok'.
 publish_originate_resp('undefined', _JObj, _UUID, _CtrlQ) -> 'ok';
 publish_originate_resp(ServerId, JObj, UUID, CtrlQ) ->
-    ExtendedData = case ecallmgr_fs_channels:api_status(UUID) of
-                       {'error', _} -> [];
-                       {'ok', Data} -> Data
-                   end,
     Resp = kz_json:set_values([{<<"Event-Category">>, <<"resource">>}
                               ,{<<"Application-Response">>, <<"SUCCESS">>}
                               ,{<<"Event-Name">>, <<"originate_resp">>}
                               ,{<<"Call-ID">>, UUID}
                               ,{<<"Control-Queue">>, CtrlQ}
-                              | ExtendedData
+                              | get_extended_data(UUID)
                               ]
                              ,JObj
                              ),
@@ -759,6 +751,13 @@ publish_originate_uuid(ServerId, UUID, JObj, CtrlQueue) ->
              ]),
     lager:debug("sent originate_uuid to ~s", [ServerId]),
     kapi_resource:publish_originate_uuid(ServerId, Resp).
+
+-spec get_extended_data(kz_term:ne_binary()) -> kz_term:proplist().
+get_extended_data(UUID) ->
+    case ecallmgr_fs_channels:api_status(UUID) of
+        {'error', _} -> [];
+        {'ok', Data} -> Data
+    end.
 
 -spec maybe_send_originate_uuid(created_uuid(), pid(), state()) -> 'ok'.
 maybe_send_originate_uuid({_, UUID}, Pid, #state{server_id=ServerId
