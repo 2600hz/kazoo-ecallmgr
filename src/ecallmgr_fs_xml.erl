@@ -48,8 +48,6 @@
 
 -include("ecallmgr.hrl").
 
--define(DEFAULT_USER_CACHE_TIME_IN_MS, ?MILLISECONDS_IN_HOUR). %% 1 hour
-
 -spec acl_xml(kz_json:object()) -> {'ok', iolist()}.
 acl_xml(AclsJObj) ->
     AclsFold = lists:foldl(fun arrange_acl_node/2, orddict:new(), kz_json:to_proplist(AclsJObj)),
@@ -833,11 +831,11 @@ codec_mappings(Codec) ->
 %% sign and the value wraped in single quotes.
 %% @end
 %%------------------------------------------------------------------------------
--spec encode_fs_val(kz_term:text(), kz_term:text()) -> kz_term:ne_binary().
+-spec encode_fs_val(kz_term:text(), kz_term:text() | integer()) -> kz_term:ne_binary().
 encode_fs_val(Prefix, V) ->
     list_to_binary([Prefix, "='", escape(V, $\'), "'"]).
 
--spec escape(kz_term:text(), char()) -> kz_term:ne_binary().
+-spec escape(kz_term:text() | integer(), char()) -> kz_term:ne_binary().
 escape(V, C) ->
     iolist_to_binary([encode(A, C) || <<A>> <= kz_term:to_binary(V)]).
 encode(C, C) -> [$\\, C];
@@ -1614,7 +1612,7 @@ directory_resp_device_xml(Endpoint, JObj) ->
     ParamsEl = [param_el(K,V) || {K,V} <- Params],
     ParamsEls = params_el(ParamsEl ++ SIPHeadersEl ++ CRVsEl),
 
-    UserEl = user_el(UserProps, [VariablesEl, ProfileVariablesEl, ParamsEls, callfwd_el(Endpoint)]),
+    UserEl = user_el(UserProps, [VariablesEl, ProfileVariablesEl, ParamsEls, callfwd_el(Endpoint), failover_el(Endpoint)]),
     DomainEl = domain_el(DomainName, UserEl),
     SectionEl = section_el(<<"directory">>, DomainEl),
     {'ok', xmerl:export([SectionEl], 'fs_xml')}.
@@ -1655,7 +1653,7 @@ directory_resp_user_xml(Endpoint, JObj) ->
 
     ParamsEls = params_el(ParamsEl ++ SIPHeadersEl ++ CRVsEl),
 
-    UserEl = user_el(UserProps, [VariablesEl, ProfileVariablesEl, ParamsEls, callfwd_el(Endpoint)]),
+    UserEl = user_el(UserProps, [VariablesEl, ProfileVariablesEl, ParamsEls, callfwd_el(Endpoint), failover_el(Endpoint)]),
     DomainEl = domain_el(DomainName, UserEl),
     SectionEl = section_el(<<"directory">>, DomainEl),
     {'ok', xmerl:export([SectionEl], 'fs_xml')}.
@@ -1750,6 +1748,26 @@ call_forward_dial_string(CallForward) ->
 
 filter_call_fwd_props(Props) ->
     lists:filter(fun({K,_V}) -> lists:member(K, ?CALLFWD_FILTER) end, Props).
+
+failover_el(Endpoint) ->
+    case failover_properties(Endpoint) of
+        [] -> 'undefined';
+        Props -> variables_el('failover', [variable_el(K, callfwd_property(K, V)) || {K, V} <- Props])
+    end.
+
+failover_properties(Endpoint) ->
+    case kz_json:get_json_value(<<"Failover">>, Endpoint) of
+        undefined ->
+            [];
+        Failover ->
+            DialString = call_forward_dial_string(Failover),
+            URI = kz_json:get_ne_binary_value(<<"Call-Forward-Request-URI">>, Failover),
+            Props = kz_json:to_proplist(<<"Custom-Channel-Vars">>, Failover),
+            filter_call_fwd_props([{<<"Dial-String">>, DialString}
+                                  ,{<<"Request-URI">>, URI}
+                                  | Props
+                                  ])
+    end.
 
 -spec location_el(kz_types:xml_attrib_value(), kz_types:xml_attrib_value()) -> kz_types:xml_el().
 location_el(Id, Value) ->
