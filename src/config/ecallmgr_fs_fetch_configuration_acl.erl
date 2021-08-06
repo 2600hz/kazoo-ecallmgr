@@ -41,14 +41,11 @@ acl(#{node := Node, fetch_id := Id}=Ctx) ->
     MediaACLs = ecallmgr_fs_acls:media_acls(),
     AuthoritativeACLs = ecallmgr_fs_acls:authoritative_acls(),
     ACLs = kz_json:merge(AuthoritativeACLs, MediaACLs),
-    ConfigXML = generate_acl_xml(ACLs, kz_json:is_empty(ACLs)),
+    ConfigXML = generate_acl_xml(ACLs),
     lager:debug_unsafe("sending acl XML to ~s: ~s", [Node, ConfigXML]),
     freeswitch:fetch_reply(Ctx#{reply => ConfigXML}).
 
--spec generate_acl_xml(kz_json:object(), boolean()) -> kz_term:ne_binary().
-generate_acl_xml(_ACLs, true) ->
-    {'ok', ConfigXml} = ecallmgr_fs_xml:not_found(<<"acl">>),
-    erlang:iolist_to_binary(ConfigXml);
-generate_acl_xml(ACLs, false) ->
+-spec generate_acl_xml(kz_json:object()) -> kz_term:ne_binary().
+generate_acl_xml(ACLs) ->
     {'ok', ConfigXml} = ecallmgr_fs_xml:acl_xml(ACLs),
     erlang:iolist_to_binary(ConfigXml).
