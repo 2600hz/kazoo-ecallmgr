@@ -60,6 +60,8 @@
 
 -export([async_api/3]).
 
+-export([contact_api/1]).
+
 -include("ecallmgr.hrl").
 
 -define(TIMEOUT, 5 * ?MILLISECONDS_IN_SECOND).
@@ -251,3 +253,6 @@ get_option(Node, Option) ->
 
 -spec async_api(atom(), atom(), string() | binary()) -> fs_api_return().
 async_api(Node, Cmd, Args) -> ?FS_MODULE:async_api(Node, Cmd, Args).
+
+-spec contact_api(atom()) -> binary().
+contact_api(Node) -> ?FS_MODULE:contact_api().
