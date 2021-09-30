@@ -99,7 +99,7 @@ fetch_from_registrar(#{fetch_id := FetchId, node := Node, payload := JObj}=Conte
 fetch_from_proxy(#{fetch_id := FetchId, node := Node, payload := JObj}=Context, AccountId, EndpointId) ->
     Req = [{"Token-ID", list_to_binary([EndpointId, "@", AccountId])}
           ,{"Search-Type", <<"token">>}
-          | kz_api:default_headers(?APP, ?APP_VERSION)
+          | kz_api:default_headers(?APP_NAME, ?APP_VERSION)
           ],
     case kz_amqp_worker:call(Req, fun kapi_registration:publish_search_req/1) of
         {'ok', RegObj} ->
