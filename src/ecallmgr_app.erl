@@ -28,6 +28,7 @@ start(_StartType, _StartArgs) ->
     _ = event_stream_bind(),
     _ = fetch_handlers_bind(),
     'ok' = build_mod_kazoo_config(),
+    _ = ecallmgr_fs_channels:set_channels_update_default_strategy(),
     ecallmgr_sup:start_link().
 
 -spec request(kz_nodes:request_acc()) -> kz_nodes:request_acc().
