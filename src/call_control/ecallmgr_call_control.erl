@@ -350,6 +350,8 @@ handle_info('nodedown_restart_exceeded', #state{is_node_up='false'}=State) ->
     {'noreply', handle_channel_destroyed(State)};
 handle_info({switch_reply, _}, State) ->
     {'noreply', State};
+handle_info({switch_reply, _, _}, State) ->
+    {'noreply', State};
 handle_info({route_resp, _, _}, State) ->
     {'noreply', State};
 handle_info(_Msg, State) ->
