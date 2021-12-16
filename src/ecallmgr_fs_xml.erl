@@ -411,7 +411,7 @@ route_resp_log_winning_node() ->
     action_el(<<"log">>, [<<"NOTICE log|${uuid}|", (kz_term:to_binary(node()))/binary, " won call control">>]).
 
 route_resp_set_winning_node() ->
-    action_el(<<"export">>, [?SET_CCV(<<"Ecallmgr-Node">>, (kz_term:to_binary(node())))]).
+    action_el(<<"export">>, [?SET_CCV(<<"Ecallmgr-Node">>, (kz_term:to_binary(node())))], true).
 
 route_resp_fire_route_win(JObj, #{'control_q' := ControlQ
                                  ,'fetch_id' := FetchId
@@ -1476,8 +1476,9 @@ event_filters_el(Filters) ->
 
 -spec route_resp_park_xml(kz_json:object(), dialplan_context()) -> kz_types:xml_els().
 route_resp_park_xml(JObj, DialplanContext) ->
-    Inline = [route_resp_fire_route_win(JObj, DialplanContext)
+    Inline = [route_resp_set_winning_node()
              ,route_resp_set_control_info(DialplanContext)
+             ,route_resp_fire_route_win(JObj, DialplanContext)
              ,route_resp_bridge_id()
              ],
     Exten = [route_resp_ringback(JObj)
@@ -1485,7 +1486,6 @@ route_resp_park_xml(JObj, DialplanContext) ->
             ,maybe_start_dtmf_action(DialplanContext)
             ,route_resp_pre_park_action(JObj)
             ,route_resp_log_winning_node()
-            ,route_resp_set_winning_node()
             ,route_resp_ccvs(JObj)
             ,route_resp_cavs(JObj)
             ,unset_custom_sip_headers()
