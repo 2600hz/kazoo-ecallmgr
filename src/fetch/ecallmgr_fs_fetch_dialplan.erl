@@ -279,19 +279,26 @@ route_winner(#{payload := JObj}) ->
     end.
 
 -spec block_call_routines(dialplan_context()) -> dialplan_context().
-block_call_routines(Map) ->
-    Blacklist = get_blacklist(Map),
+block_call_routines(#{request := ReqJObj}=Map) ->
+    Blacklist = get_blacklist(ReqJObj),
     Routines = [{fun should_block_anonymous/2, {<<"433">>, <<"Anonymity Disallowed">>}}
                ,{fun is_blacklisted/2, {<<"603">>, <<"Decline">>}}
                ],
-    lists:foldl(fun block_call_routine/3, [Map, Blacklist], Routines).
+    lists:foldl(fun(Routine, MapAcc) ->
+                        block_call_routine(Routine, MapAcc, Blacklist)
+                end
+               ,Map
+               ,Routines
+               ).
 
--type block_call_fun() :: fun((kz_json:object(), kz_term:api_object()) -> boolean()).
+-type block_call_fun() :: fun((kz_json:object(), kz_json:object()) -> boolean()).
 -type block_call_resp() :: {kz_term:ne_binary(), kz_term:ne_binary()}.
 -type block_call_arg() :: {block_call_fun(), block_call_resp()}.
 
--spec block_call_routine(block_call_arg(), dialplan_context(), kz_term:api_object()) -> dialplan_context().
-block_call_routine({_Fun, {_Code, _Msg}}, #{blocked := 'true'}=Map, _Blacklist) -> Map;
+-spec block_call_routine(block_call_arg(), dialplan_context(), kz_json:object()) ->
+          dialplan_context().
+block_call_routine({_Fun, {_Code, _Msg}}, #{blocked := 'true'}=Map, _Blacklist) ->
+    Map;
 block_call_routine({Fun, {Code, Msg}}, #{request := JObj}=Map, Blacklist) ->
     case Fun(JObj, Blacklist) of
         'true' -> Map#{reply => #{payload => error_message(Code, Msg)}
@@ -300,83 +307,68 @@ block_call_routine({Fun, {Code, Msg}}, #{request := JObj}=Map, Blacklist) ->
         'false' -> Map
     end.
 
--spec should_block_anonymous(kz_json:object(), kz_term:api_object()) -> boolean().
+-spec should_block_anonymous(kz_json:object(), kz_json:object()) -> boolean().
 should_block_anonymous(JObj, Blacklist) ->
     kz_privacy:should_block_anonymous(JObj)
         orelse (kz_privacy:is_anonymous(JObj)
-        andalso is_blacklist_block_anonymous(Blacklist)
-    ).
-
--spec is_blacklist_block_anonymous(kz_term:api_object()) -> boolean().
-is_blacklist_block_anonymous('undefined') -> 'false';
-is_blacklist_block_anonymous(Blacklist) ->
-    kz_json:is_true(<<"should_block_anonymous">>, Blacklist).
+                andalso kz_json:is_true(<<"should_block_anonymous">>, Blacklist)
+               ).
 
 %%------------------------------------------------------------------------------
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
--spec is_blacklisted(kz_json:object(), kz_term:api_object()) -> boolean().
-is_blacklisted(_, 'undefined') ->
-    'false';
-is_blacklisted(JObj, _Blacklist) ->
-    is_number_blacklisted(get_blacklist(JObj), JObj).
+-spec is_blacklisted(kz_json:object(), kz_json:object()) -> boolean().
+is_blacklisted(JObj, Blacklist) ->
+    case kz_json:is_empty(Blacklist) of
+        'true' -> 'false';
+        'false' -> is_number_blacklisted(Blacklist, JObj)
+    end.
 
 -spec is_number_blacklisted(kz_json:object(), kz_json:object()) -> boolean().
-is_number_blacklisted(_Blacklist, JObj) ->
+is_number_blacklisted(Blacklist, JObj) ->
     Number = kz_json:get_value(<<"Caller-ID-Number">>, JObj, kz_privacy:anonymous_caller_id_number()),
     Normalized = knm_converters:normalize(Number),
-    lager:info("~s(~s) is blacklisted", [Number, Normalized]),
-    'true'.
+    case kz_json:get_value(Normalized, Blacklist) of
+        'undefined' -> 'false';
+        _ -> lager:info("~s(~s) is blacklisted", [Number, Normalized]),
+             'true'
+    end.
 
--spec get_blacklists(kz_term:ne_binary()) -> kz_term:ne_binaries().
-get_blacklists(AccountId) ->
+-spec get_account_blacklist_ids(kz_term:ne_binary()) -> kz_term:ne_binaries().
+get_account_blacklist_ids(AccountId) ->
     case kzd_accounts:fetch(AccountId) of
-        {'error', _R}=E ->
+        {'error', _R} ->
             lager:error("could not open account doc ~s : ~p", [AccountId, _R]),
-            E;
+            [];
         {'ok', Doc} ->
-            kzd_accounts:blacklists(Doc, [])
+            kz_json:get_ne_binaries(<<"blacklists">>, Doc, [])
     end.
 
 -spec get_blacklist(kz_json:object()) -> kz_json:object().
 get_blacklist(JObj) ->
     AccountId = kzd_fetch:account_id(JObj),
-    get_blacklist(JObj, AccountId, get_blacklists(AccountId)).
+    get_blacklist(AccountId, get_account_blacklist_ids(AccountId)).
 
--spec get_blacklist(kz_json:object(), kz_term:ne_binary(), kz_term:ne_binaries()) -> kz_json:object().
-get_blacklist(_JObj, _AccountId, []) -> 'undefined';
-get_blacklist(JObj, AccountId, Blacklists) ->
-    Number = kz_json:get_value(<<"Caller-ID-Number">>, JObj),
-    Normalized = knm_converters:normalize(Number),
-    AccountDb = kzs_util:format_account_db(AccountId),
-    
-    ViewOptions = [{'key', Normalized}
-                  ,'include_docs'
-                  ],
-    case kz_datamgr:get_results(AccountDb, <<"blacklists/listing_by_number">>, ViewOptions) of
-        {'ok', []} -> 'undefined';
+-spec get_blacklist(kz_term:ne_binary(), kz_term:ne_binaries()) ->
+          kz_json:object().
+get_blacklist(_AccountId, []) ->
+    kz_json:new();
+get_blacklist(AccountId, BlacklistIds) ->
+    case kz_datamgr:open_cache_docs(AccountId, BlacklistIds) of
         {'ok', JObjs} ->
-            lists:foldl(fun(J, Acc) -> merge_blacklists(J, Acc, Blacklists) end
-                       ,kz_json:new()
-                       ,JObjs
-                       );
+            lists:foldl(fun merge_blacklists/2, kz_json:new(),JObjs);
         {'error', _Reason} ->
-            lager:error("could not open fetch blacklists from db ~s: ~p", [AccountDb, _Reason]),
-            'undefined'
+            lager:error("could not open blacklists: ~p", [_Reason]),
+            kz_json:new()
     end.
 
--spec merge_blacklists(kz_json:object(), kz_json:objects(), kz_term:ne_binaries()) -> kz_json:object().
-merge_blacklists(JObj, Acc, Blacklists) ->
+-spec merge_blacklists(kz_json:object(), kz_json:objects()) -> kz_json:object().
+merge_blacklists(JObj, Acc) ->
     Doc = kz_json:get_value(<<"doc">>, JObj),
-    case lists:member(kz_doc:id(Doc), Blacklists) of
-        'true' ->
-            Numbers = kzd_blacklists:numbers(Doc),
-            BlackList = maybe_set_block_anonymous(Numbers, kzd_blacklists:should_block_anonymous(Doc, 'false')),
-            kz_json:merge_jobjs(Acc, BlackList);
-        'false' ->
-            Acc
-    end.
+    Numbers = kzd_blacklists:numbers(Doc),
+    BlackList = maybe_set_block_anonymous(Numbers, kzd_blacklists:should_block_anonymous(Doc, 'false')),
+    kz_json:merge_jobjs(Acc, BlackList).
 
 -spec maybe_set_block_anonymous(kz_json:object(), boolean()) -> kz_json:object().
 maybe_set_block_anonymous(JObj, 'false') -> JObj;
