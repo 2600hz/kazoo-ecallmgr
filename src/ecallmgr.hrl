@@ -80,7 +80,7 @@
                  ,realm :: kz_term:api_ne_binary() | '_' | '$2'
                  ,username :: kz_term:api_ne_binary() | '_' | '$1'
                  ,import_moh = 'false' :: boolean() | '_'
-                 ,answered = 'true' :: boolean() | '_'
+                 ,answered = 'false' :: boolean() | '_'
                  ,other_leg :: kz_term:api_binary() | '$2' | '_'
                  ,node :: atom() | '$1' | '$2' | '$3' | '_'
                  ,former_node :: atom() | '$2' | '_'
