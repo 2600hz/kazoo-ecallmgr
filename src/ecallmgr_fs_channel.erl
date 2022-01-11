@@ -422,7 +422,7 @@ jobj_to_updates(Node, UUID, JObj) ->
                            ,{#channel.realm, kz_json:get_ne_binary_value(<<"Realm">>, CCVs)}
                            ,{#channel.username, kz_json:get_ne_binary_value(<<"Username">>, CCVs)}
 
-                           ,{#channel.answered, kz_json:get_ne_binary_value(<<"Answer-State">>, JObj) =:= <<"answered">>}
+                           ,{#channel.answered, kz_call_event:channel_answer_state(JObj) =:= <<"answered">>}
                            ,{#channel.node, Node}
                            ,{#channel.timestamp, kz_time:current_tstamp()}
 
