@@ -244,6 +244,7 @@
                               ,{<<"Default-Language">>, <<"default_language">>}
                               ,{<<"Channel-Language">>, <<"channel_language">>}
                               ,{<<"Diversions">>, <<"sip_h_Diversion">>}
+                              ,{<<"Eavesdrop-Enable-DTMF">>, <<"eavesdrop_enable_dtmf">>}
                               ,{<<"Eavesdrop-Group">>, <<"eavesdrop_group">>}
                               ,{<<"Eavesdrop-Group-ID">>, <<"eavesdrop_group">>}
                               ,{<<"Enable-T38-Fax">>, <<"fax_enable_t38">>}
