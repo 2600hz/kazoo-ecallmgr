@@ -278,12 +278,6 @@ contact_vars_fold({<<"Proxy-Protocol">>, Proto}, Props) ->
             ];
         _ -> Props
     end;
-contact_vars_fold({<<"Original-Contact">>, Contact}, Props) ->
-    [#uri{}=UriContact] = kzsip_uri:uris(Contact),
-    case props:get_value(<<"transport">>, UriContact#uri.opts) of
-        'undefined' -> Props;
-        Transport -> contact_vars_fold({<<"Proxy-Protocol">>, Transport}, Props)
-    end;
 contact_vars_fold(_ , Props) -> Props.
 
 -spec lookup_original_contact(kz_term:ne_binary(), kz_term:ne_binary()) ->
