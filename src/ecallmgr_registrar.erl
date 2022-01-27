@@ -284,11 +284,6 @@ contact_vars_fold({<<"Original-Contact">>, Contact}, Props) ->
         'undefined' -> Props;
         Transport -> contact_vars_fold({<<"Proxy-Protocol">>, Transport}, Props)
     end;
-contact_vars_fold({<<"AOR">>, AOR}, Props) ->
-    [{<<"SIP-Invite-To-URI">>, AOR}
-    ,{<<"KAZOO-AOR">>, AOR}
-    | Props
-    ];
 contact_vars_fold(_ , Props) -> Props.
 
 -spec lookup_original_contact(kz_term:ne_binary(), kz_term:ne_binary()) ->
