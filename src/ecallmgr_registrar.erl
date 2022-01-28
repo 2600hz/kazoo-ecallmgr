@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2011-2021, 2600Hz
+%%% @copyright (C) 2011-2022, 2600Hz
 %%% @doc Listener for reg_success, and reg_query AMQP requests
 %%% @author James Aimonetti
 %%%
@@ -250,7 +250,7 @@ proxy_vars_options(Reg) ->
 
 proxy_vars_options_fun(Reg) ->
     fun(F, Acc) ->
-        F(Reg, Acc)
+            F(Reg, Acc)
     end.
 
 -spec proxy_var_option_token(registration(), map()) -> map().
@@ -267,7 +267,7 @@ proxy_vars(Props, Options) ->
 
 proxy_vars_fun(Options) ->
     fun(Prop, Acc) ->
-        proxy_vars_fold(Prop, Acc, Options)
+            proxy_vars_fold(Prop, Acc, Options)
     end.
 
 -spec proxy_vars_fold({kz_term:ne_binary(), term()}, kz_term:proplist(), map()) -> kz_term:proplist().
