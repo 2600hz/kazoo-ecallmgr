@@ -42,8 +42,8 @@ init() ->
 -spec fetch_location(map()) -> fs_handlecall_ret().
 fetch_location(#{node := Node, fetch_id := FetchId, payload := JObj}=Context) ->
     kz_log:put_callid(JObj),
-    lager:debug("received location ~s fetch request ~s from ~s"
-               ,[kzd_fetch:fetch_action(JObj), FetchId, Node]
+    lager:debug("received location ~s fetch request ~s for ~s from ~s"
+               ,[kzd_fetch:fetch_action(JObj), FetchId, kzd_fetch:fetch_key_value(JObj), Node]
                ),
     case kzd_fetch:fetch_action(JObj) of
         <<"call">> -> fetch_registration(Context, endpoint(JObj));
