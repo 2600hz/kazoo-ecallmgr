@@ -92,7 +92,7 @@
                       ,expires = ?EXPIRES_MISSING_VALUE :: non_neg_integer() | '_' | '$1'
                       ,from_host :: kz_term:api_ne_binary() | '_'
                       ,from_user = <<"nouser">> :: kz_term:ne_binary() | '_'
-                      ,id :: {kz_term:ne_binary(), kz_term:ne_binary()} | '_' | '$1'
+                      ,id :: {kz_term:ne_binary(), kz_term:ne_binary() | '_'} | '_' | '$1'
                       ,initial = 'true' :: boolean() | '_'
                       ,initial_registration = kz_time:now_s() :: kz_time:gregorian_seconds() | '_'
                       ,last_registration = kz_time:now_s() :: kz_time:gregorian_seconds() | '_' | '$2'
@@ -118,7 +118,7 @@
                       ,to_user = <<"nouser">> :: kz_term:ne_binary() | '_'
                       ,user_agent :: kz_term:api_ne_binary() | '_'
                       ,username :: kz_term:api_ne_binary() | '_'
-                      ,endpoint_info :: kz_term:api_object() | '_'
+                      ,endpoint_token :: kz_term:api_ne_binary() | '_'
                       }).
 
 -type registration() :: #registration{}.
@@ -211,8 +211,10 @@ lookup_endpoint(<<EndpointId/binary>>, <<AccountId/binary>>) ->
     case ets:match_object(?MODULE, MatchSpec) of
         [] ->
             {'error', 'not_found'};
-        [#registration{}=Reg] ->
-            {'ok', to_endpoint(Reg)}
+        [#registration{endpoint_token='undefined'}] ->
+            {'ok', []};
+        [#registration{endpoint_token=Token}] ->
+            {'ok', [{'token', Token}]}
     end.
 
 -spec lookup_proxy_path(kz_term:ne_binary(), kz_term:ne_binary()) ->
@@ -252,12 +254,8 @@ proxy_vars_options_fun(Reg) ->
     end.
 
 -spec proxy_var_option_token(registration(), map()) -> map().
-proxy_var_option_token(#registration{endpoint_info=undefined}, Options) -> Options;
-proxy_var_option_token(#registration{endpoint_info=JObj}, Options) ->
-    case kz_json:is_empty(JObj) of
-        true -> Options;
-        false -> Options#{token_registration => true}
-    end.
+proxy_var_option_token(#registration{endpoint_token=undefined}, Options) -> Options;
+proxy_var_option_token(#registration{}, Options) -> Options#{token_registration => true}.
 
 -spec proxy_vars(registration()) -> kz_term:proplist().
 proxy_vars(Reg) ->
@@ -963,12 +961,33 @@ get_realm(Key, JObj) ->
         Realm -> Realm
     end.
 
+endpoint_from_token('undefined') -> kz_json:new();
+endpoint_from_token(EndpointToken) ->
+    endpoint_from_token_ccvs(EndpointToken, kz_auth:validate_token(EndpointToken)).
+
+endpoint_from_token_ccvs(_Token, {'error', _}) -> kz_json:new();
+endpoint_from_token_ccvs(Token, {'ok', Claims}) ->
+    EndpointId = kz_auth_claims:id(Claims),
+    AccountId = kz_auth_claims:account_id(Claims),
+    Result = kz_endpoint:get(EndpointId, AccountId, [{'token', Token}]),
+    endpoint_from_token_ccvs(Result).
+
+endpoint_from_token_ccvs({'error', _}) -> kz_json:new();
+endpoint_from_token_ccvs({'ok', Endpoint}) ->
+    Props = [{<<"Owner-ID">>, kzd_endpoint:owner_id(Endpoint)}
+            ,{<<"Account-Realm">>, kzd_endpoint:account_realm(Endpoint)}
+            ,{<<"Account-Name">>, kzd_endpoint:account_name(Endpoint)}
+            ,{<<"Presence-ID">>, kzd_endpoint:presence_id(Endpoint)}
+            ],
+    kz_json:from_list(Props).
+
 -spec augment_registration(registration(), kz_json:object()) -> registration().
 augment_registration(Reg, JObj) ->
     CCVs = kz_json:get_json_value(<<"Custom-Channel-Vars">>, JObj, kz_json:new()),
-    EndpointInfo = kz_json:get_json_value(<<"Endpoint-Info">>, CCVs, kz_json:new()),
+    EndpointToken = kz_json:get_ne_binary_value(<<"Endpoint-Token">>, CCVs),
+    EndpointCCVsFromToken = endpoint_from_token(EndpointToken),
 
-    FindFun = fun(Key, Default) -> kz_json:find(Key, [JObj, CCVs, EndpointInfo], Default) end,
+    FindFun = fun(Key, Default) -> kz_json:find(Key, [JObj, CCVs, EndpointCCVsFromToken], Default) end,
 
     AccountId = FindFun(<<"Account-ID">>, Reg#registration.account_id),
 
@@ -996,7 +1015,7 @@ augment_registration(Reg, JObj) ->
                     ,presence_id=FindFun(<<"Presence-ID">>, Reg#registration.presence_id)
                     ,register_overwrite_notify=OverwriteNotify
                     ,suppress_unregister=SuppressUnregister
-                    ,endpoint_info=EndpointInfo
+                    ,endpoint_token=EndpointToken
                     }.
 
 -spec fix_contact(kz_term:api_binary()) -> kz_term:api_binary().
@@ -1267,20 +1286,6 @@ registration_notify(#registration{contact=Contact
               ]),
     kapi_presence:publish_register_overwrite(Props).
 
--spec to_endpoint(registration()) -> kz_term:proplist().
-to_endpoint(Reg) ->
-    EndpointInfo = kz_json:normalize(Reg#registration.endpoint_info),
-    props:filter_undefined(
-      [{<<"pvt_account_id">>, Reg#registration.account_id}
-      ,{<<"id">>, Reg#registration.authorizing_id}
-      ,{<<"pvt_type">>, Reg#registration.authorizing_type}
-      ,{<<"owner_id">>, Reg#registration.owner_id}
-      ,{<<"presence_id">>, Reg#registration.presence_id}
-      ,{<<"sip">>, kz_json:get_json_value(<<"user_agent">>, EndpointInfo)}
-      | kz_json:to_proplist(kz_json:delete_keys([<<"user_agent">>], EndpointInfo))
-      ]
-     ).
-
 -spec to_props(registration()) -> kz_term:proplist().
 to_props(Reg) ->
     props:filter_undefined(
@@ -1321,7 +1326,7 @@ to_props(Reg) ->
       ,{<<"To-User">>, Reg#registration.to_user}
       ,{<<"User-Agent">>, Reg#registration.user_agent}
       ,{<<"Username">>, Reg#registration.username}
-      ,{<<"Endpoint-Info">>, Reg#registration.endpoint_info}
+      ,{<<"Endpoint-Token">>, Reg#registration.endpoint_token}
       ,{<<"AOR">>, list_to_binary(["sip:", Reg#registration.username, "@", Reg#registration.realm])}
       ]
      ).
