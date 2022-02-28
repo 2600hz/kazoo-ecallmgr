@@ -360,7 +360,7 @@ get_blacklisted_number(AccountId, JObj, BlacklistIds) ->
         {'ok', []} ->
             kz_json:new();
         {'ok', JObjs} ->
-            merge_blacklisted_numbers(Normalized, BlacklistIds, JObjs, kz_json:new());
+            merge_blacklisted_numbers(Normalized, BlacklistIds, JObjs, []);
         {'error', _Reason} ->
             lager:error("could not fetch number blacklists from db ~s: ~p", [AccountId, _Reason]),
             kz_json:new()
