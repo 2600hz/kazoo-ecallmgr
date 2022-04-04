@@ -43,6 +43,11 @@
             "description": "ecallmgr default recording extension",
             "type": "string"
         },
+        "event_stream_idle_alert": {
+            "default": 0,
+            "description": "ecallmgr event stream idle alert",
+            "type": "integer"
+        },
         "expandable_macros": {
             "default": {
                 "{account_id}": "${ecallmgr_Account-ID}",
@@ -145,6 +150,11 @@
         "redirect_via_proxy": {
             "default": true,
             "description": "ecallmgr redirect via proxy",
+            "type": "boolean"
+        },
+        "restrict_channel_event_publisher": {
+            "default": true,
+            "description": "ecallmgr restrict_channel_event_publisher",
             "type": "boolean"
         },
         "sanitize_fs_value_regex": {

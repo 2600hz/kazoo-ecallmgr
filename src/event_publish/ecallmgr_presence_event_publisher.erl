@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2021, 2600Hz
+%%% @copyright (C) 2010-2022, 2600Hz
 %%% @doc Receives PRESENCE_IN event
 %%%
 %%% This Source Code Form is subject to the terms of the Mozilla Public
@@ -40,7 +40,7 @@ publish_presence(#{call_id := UUID, payload := _JObj} = Ctx) ->
         'false' -> 'ok'
     end;
 publish_presence(#{payload := JObj}) ->
-    lager:debug_unsafe("PRESENCE NO CALLID ~s", [kz_json:encode(JObj, ['pretty'])]).
+    lager:debug_unsafe("PRESENCE NO CALLID ~s", [kz_json:encode(JObj)]).
 
 -spec check_proto(map()) -> boolean().
 check_proto(#{payload := JObj}) ->

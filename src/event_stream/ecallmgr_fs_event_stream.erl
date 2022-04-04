@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2021, 2600Hz
+%%% @copyright (C) 2012-2022, 2600Hz
 %%% @doc
 %%% This Source Code Form is subject to the terms of the Mozilla Public
 %%% License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -316,7 +316,7 @@ handle_event(Node, JObj, Channel) ->
 
 -spec log_json_event(atom(), kz_term:api_ne_binary(), kz_json:object()) -> any().
 log_json_event(Node, 'undefined', JObj) ->
-    lager:debug_unsafe("received unknown fs event from ~s : ~s", [Node, kz_json:encode(JObj, ['pretty'])]);
+    lager:debug_unsafe("received unknown fs event from ~s : ~s", [Node, kz_json:encode(JObj)]);
 log_json_event(Node, Event, JObj) ->
     lager:debug_unsafe("received fs event from ~s => ~s : ~s", [Node, kz_api:event_category(JObj), Event]).
 
