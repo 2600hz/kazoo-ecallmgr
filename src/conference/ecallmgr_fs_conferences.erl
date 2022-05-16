@@ -97,7 +97,7 @@ start_link() ->
 -spec summary() -> 'ok'.
 summary() ->
     MatchSpec = [{#conference{_ = '_'}, [], ['$_']}],
-    ets:select(?CONFERENCES_TBL, MatchSpec, 1).
+    print_summary(ets:select(?CONFERENCES_TBL, MatchSpec, 1)).
 
 -spec count() -> non_neg_integer().
 count() -> ets:info(?CONFERENCES_TBL, 'size').
