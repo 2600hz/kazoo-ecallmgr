@@ -625,7 +625,7 @@ has_channels_for_owner(OwnerId) ->
                           ,_ = '_'
                           }
                  ,[]
-                 ,[{'=:=', '$1', {const, OwnerId}}]
+                 ,[{'=:=', '$1', {'const', OwnerId}}]
                  }
                 ],
     Count = ets:select_count(?CHANNELS_TBL, MatchSpec),

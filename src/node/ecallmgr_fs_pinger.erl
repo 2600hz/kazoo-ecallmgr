@@ -119,7 +119,7 @@ handle_info('check_node_status', #state{node=Node, timeout=Timeout}=State) ->
             {'noreply', State#state{timeout=Timeout+?MILLISECONDS_IN_SECOND}, 'hibernate'}
     end;
 handle_info('exit', State) ->
-    {stop, normal, State};
+    {'stop', 'normal', State};
 handle_info(_Info, State) ->
     lager:debug("unhandled msg: ~p", [_Info]),
     {'noreply', State}.

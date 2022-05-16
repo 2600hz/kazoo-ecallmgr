@@ -80,8 +80,8 @@ is_mobile_device(Data) ->
 
 -spec is_endpoint(kzd_freeswitch:data()) -> authz_reply().
 is_endpoint(Data) ->
-    kzd_freeswitch:authorizing_id(Data) =/= undefined
-        andalso kzd_freeswitch:resource_id(Data) =:= undefined.
+    kzd_freeswitch:authorizing_id(Data) =/= 'undefined'
+        andalso kzd_freeswitch:resource_id(Data) =:= 'undefined'.
 
 -spec maybe_authorized_channel(kzd_freeswitch:data(), atom()) -> authz_reply().
 maybe_authorized_channel(Data, Node) ->
