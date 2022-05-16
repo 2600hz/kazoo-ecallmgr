@@ -54,6 +54,8 @@
 
 -include("ecallmgr.hrl").
 
+-elvis([{elvis_style, no_debug_call, disable}]).
+
 -define(SERVER, ?MODULE).
 
 -define(RESPONDERS, [{{?MODULE, 'handle_directory_cache_clear'}
