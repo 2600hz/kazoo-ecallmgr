@@ -166,7 +166,7 @@ handle_responses(JObj, N, Responses) ->
 update_endpoint(Endpoint, InteractionId) ->
     Updates = [{fun kz_json:set_value/3, [<<"Custom-Channel-Vars">>, <<"Ecallmgr-Node">>], node()}
               ,{fun kz_json:set_value/3, [<<"Custom-Channel-Vars">>, <<"Ignore-Early-Media">>], 'true'}
-              ,{fun kz_json:set_value/3, [<<"Custom-Channel-Vars">>, <<"Call-Flag-NO-Flip">>], true}
+              ,{fun kz_json:set_value/3, [<<"Custom-Channel-Vars">>, <<"Call-Flag-NO-Flip">>], 'true'}
               ,{fun kz_json:set_value/3, [<<"Custom-Channel-Vars">>, <<?CALL_INTERACTION_ID>>], InteractionId}
               ],
     lists:foldl(fun({F, K, V}, JObj) -> F(K, V, JObj) end, Endpoint, Updates).
