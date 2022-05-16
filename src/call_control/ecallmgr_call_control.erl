@@ -884,36 +884,51 @@ maybe_filter_queue([AppName|T]=Apps, CommandQ) when is_binary(AppName) ->
                     maybe_filter_queue(Apps, CommandQ1)
             end
     end;
-maybe_filter_queue([AppJObj|T]=Apps, CommandQ) ->
-    case queue:out(CommandQ) of
-        {'empty', _} -> CommandQ;
-        {{'value', NextJObj}, CommandQ1} ->
-            case (NextAppName = kapi_dialplan:application_name(NextJObj))
-                =:= (AppName = kapi_dialplan:application_name(AppJObj))
-                orelse kz_json:get_ne_binary_value(<<"Group-ID">>, NextJObj)
-                =:= kz_json:get_ne_binary_value(<<"Group-ID">>, AppJObj, <<"nomatch">>)
+maybe_filter_queue(Apps, CommandQ) ->
+    maybe_filter_queue(Apps, CommandQ, queue:out(CommandQ)).
+
+maybe_filter_queue(_Apps, CommandQ, {'empty', _}) ->
+    CommandQ;
+maybe_filter_queue([AppJObj | T]=Apps
+                  ,CommandQ
+                  ,{{'value', NextJObj}, CommandQ1}
+                  ) ->
+    case app_name_matches(AppJObj, NextJObj)
+        orelse group_id_matches(AppJObj, NextJObj)
+    of
+        'false' -> maybe_filter_queue(T, CommandQ);
+        'true' ->
+            Fields = kz_json:get_json_value(<<"Fields">>, AppJObj, kz_json:new()),
+            lager:debug("fields: ~p", [Fields]),
+
+            case kz_json:all(fun({AppField, AppValue}) ->
+                                     kz_json:get_value(AppField, NextJObj) =:= AppValue
+                             end
+                            ,Fields
+                            )
             of
                 'false' -> maybe_filter_queue(T, CommandQ);
                 'true' ->
-                    lager:debug("app ~s matched next command ~s, checking fields"
-                               ,[AppName, NextAppName]
-                               ),
-                    Fields = kz_json:get_json_value(<<"Fields">>, AppJObj, kz_json:new()),
-                    lager:debug("fields: ~p", [Fields]),
-
-                    case kz_json:all(fun({AppField, AppValue}) ->
-                                             kz_json:get_value(AppField, NextJObj) =:= AppValue
-                                     end
-                                    ,Fields
-                                    )
-                    of
-                        'false' -> maybe_filter_queue(T, CommandQ);
-                        'true' ->
-                            lager:debug("all fields matched queued command, popping it off"),
-                            maybe_filter_queue(Apps, CommandQ1) % same app and all fields matched
-                    end
+                    lager:debug("all fields matched queued command, popping it off"),
+                    maybe_filter_queue(Apps, CommandQ1) % same app and all fields matched
             end
     end.
+
+app_name_matches(AppJObj, NextJObj) ->
+    case {kapi_dialplan:application_name(NextJObj)
+         ,kapi_dialplan:application_name(AppJObj)
+         }
+    of
+        {AppMatches, AppMatches} ->
+            lager:debug("app ~s matched next command, checking fields", [AppMatches]),
+            'true';
+        {_NextAppName, _CurrentAppName} ->
+            'false'
+    end.
+
+group_id_matches(AppJObj, NextJObj) ->
+    kz_json:get_ne_binary_value(<<"Group-ID">>, NextJObj)
+        =:= kz_json:get_ne_binary_value(<<"Group-ID">>, AppJObj, <<"nomatch">>).
 
 -spec get_module(kz_term:ne_binary(), kz_term:ne_binary()) -> atom().
 get_module(Category, Name) ->
