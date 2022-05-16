@@ -1,1 +1,13 @@
-{"type":"object","properties":{"process_conference":{"type":"boolean","description":"interaction process_conference","default":true}},"description":"Schema for interaction system_config","_id":"system_config.interaction","$schema":"http://json-schema.org/draft-04/schema#"}
+{
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "_id": "system_config.interaction",
+    "description": "Schema for interaction system_config",
+    "properties": {
+        "process_conference": {
+            "default": true,
+            "description": "interaction process_conference",
+            "type": "boolean"
+        }
+    },
+    "type": "object"
+}
