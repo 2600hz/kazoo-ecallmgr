@@ -147,6 +147,11 @@
             "description": "ecallmgr default recording extension",
             "type": "string"
         },
+        "default_ringback": {
+            "default": "%(2000,4000,440,480)",
+            "description": "ecallmgr default ringback",
+            "type": "string"
+        },
         "event_stream_idle_alert": {
             "default": 0,
             "description": "ecallmgr event stream idle alert",
@@ -170,7 +175,7 @@
         },
         "failover_when_all_unreg": {
             "default": false,
-            "description": "ecallmgr failover_when_all_unreg",
+            "description": "failover only when all devices are offline",
             "type": "boolean"
         },
         "fax_file_path": {
