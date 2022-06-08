@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2021, 2600Hz
+%%% @copyright (C) 2012-2022, 2600Hz
 %%% @doc
 %%% @author Karl Anderson
 %%% @author James Aimonetti
@@ -33,8 +33,8 @@
 -type state() :: #state{}.
 
 -define(SHARED_BINDINGS, [{'resource', [{'restrict_to', ['originate']}]}]).
--define(NODE_BINDINGS(N), [{'resource', [{'restrict_to', ['originate']}, {'node', N}, federate]}]).
--define(SELF_BINDINGS, [{self, []}]).
+-define(NODE_BINDINGS(N), [{'resource', [{'restrict_to', ['originate']}, {'node', N}, 'federate']}]).
+-define(SELF_BINDINGS, [{'self', []}]).
 
 -define(RESPONDERS, [{{?MODULE, 'handle_originate_req'}, [{<<"resource">>, <<"originate_req">>}]}]).
 
@@ -42,15 +42,15 @@
 -define(SHARED_QUEUE_NAME, <<"ecallmgr_fs_resource">>).
 -define(SHARED_QUEUE_OPTIONS, [{'exclusive', 'false'}]).
 -define(SHARED_QUEUE_CONSUME_OPTIONS, [{'exclusive', 'false'}]).
--define(SHARED_QUEUE_PARAMS, [{queue_options, ?SHARED_QUEUE_OPTIONS}
-                             ,{consume_options, ?SHARED_QUEUE_CONSUME_OPTIONS}
+-define(SHARED_QUEUE_PARAMS, [{'queue_options', ?SHARED_QUEUE_OPTIONS}
+                             ,{'consume_options', ?SHARED_QUEUE_CONSUME_OPTIONS}
                              ]).
 
 -define(NODE_QUEUE_NAME(N), <<"ecallmgr_fs_resource_", (kz_term:to_binary(N))/binary>>).
 -define(NODE_QUEUE_OPTIONS, [{'exclusive', 'false'}]).
 -define(NODE_QUEUE_CONSUME_OPTIONS, [{'exclusive', 'false'}]).
--define(NODE_QUEUE_PARAMS, [{queue_options, ?NODE_QUEUE_OPTIONS}
-                           ,{consume_options, ?NODE_QUEUE_CONSUME_OPTIONS}
+-define(NODE_QUEUE_PARAMS, [{'queue_options', ?NODE_QUEUE_OPTIONS}
+                           ,{'consume_options', ?NODE_QUEUE_CONSUME_OPTIONS}
                            ]).
 
 -define(SELF_QUEUE_NAME, <<>>).
@@ -124,14 +124,14 @@ handle_call(_Request, _From, State) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec handle_cast(any(), state()) -> kz_types:handle_cast_ret_state(state()).
-handle_cast({gen_listener, {'created_queue', Q}}, #state{shared_queue=Q} = State) ->
+handle_cast({'gen_listener', {'created_queue', Q}}, #state{shared_queue=Q} = State) ->
     lager:debug("started shared queue ~s", [Q]),
     {'noreply', State};
-handle_cast({gen_listener, {'created_queue', Q}}, #state{node_queue=Q} = State) ->
+handle_cast({'gen_listener', {'created_queue', Q}}, #state{node_queue=Q} = State) ->
     lager:debug("started node shared queue ~s", [Q]),
     gen_server:cast(self(), {'add_queue', ?SHARED_QUEUE_NAME, ?SHARED_QUEUE_PARAMS, ?SHARED_BINDINGS}),
     {'noreply', State};
-handle_cast({gen_listener, {'created_queue', Q}}, #state{node=Node} = State) ->
+handle_cast({'gen_listener', {'created_queue', Q}}, #state{node=Node} = State) ->
     lager:debug("started self queue ~s", [Q]),
     gen_server:cast(self(), {'add_queue', ?NODE_QUEUE_NAME(Node), ?NODE_QUEUE_PARAMS, ?NODE_BINDINGS(Node)}),
     {'noreply', State#state{self = Q}};
