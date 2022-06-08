@@ -199,8 +199,8 @@ init_control(Pid, #{node := Node
                           ,controller_q=ControllerQ
                           ,control_q=ControlQ
                           ,initial_ccvs=CCVs
-                          ,is_node_up=true
-                          ,is_call_up=true
+                          ,is_node_up='true'
+                          ,is_call_up='true'
                           },
             call_control_ready(State),
             gen_server:enter_loop(?MODULE, [], State);
@@ -232,8 +232,8 @@ init_control(Pid, #{node := Node
                   ,controller_q=ControllerQ
                   ,control_q=ControlQ
                   ,initial_ccvs=CCVs
-                  ,is_node_up=true
-                  ,is_call_up=true
+                  ,is_node_up='true'
+                  ,is_call_up='true'
                   },
     call_control_ready(State),
     gen_server:enter_loop(?MODULE, [], State).
@@ -353,11 +353,11 @@ handle_info('sanity_check', #state{call_id=CallId}=State) ->
 handle_info('nodedown_restart_exceeded', #state{is_node_up='false'}=State) ->
     lager:debug("we have not received a node up in time, assuming down for good for this call", []),
     {'noreply', handle_channel_destroyed(State)};
-handle_info({switch_reply, _}, State) ->
+handle_info({'switch_reply', _}, State) ->
     {'noreply', State};
-handle_info({switch_reply, _, _}, State) ->
+handle_info({'switch_reply', _, _}, State) ->
     {'noreply', State};
-handle_info({route_resp, _, _}, State) ->
+handle_info({'route_resp', _, _}, State) ->
     {'noreply', State};
 handle_info(_Msg, State) ->
     lager:debug("unhandled message: ~p", [_Msg]),
@@ -657,16 +657,16 @@ execute_complete_error(JObj, #state{current_cmd=Cmd
 
 execute_complete_has_error(JObj) ->
     kz_call_event:application_response(JObj) =:= <<"ERROR">>
-        orelse kz_call_event:application_error_message(JObj) =/= undefined.
+        orelse kz_call_event:application_error_message(JObj) =/= 'undefined'.
 
 handle_execute_complete_error(JObj, State) ->
     handle_execute_complete_error(execute_complete_has_error(JObj), JObj, State).
 
-handle_execute_complete_error(true, JObj, State) ->
+handle_execute_complete_error('true', JObj, State) ->
     Reply = execute_complete_error(JObj, State),
     publish_error_resp(Reply),
     State;
-handle_execute_complete_error(false, _JObj, State) ->
+handle_execute_complete_error('false', _JObj, State) ->
     State.
 
 %%------------------------------------------------------------------------------
@@ -710,7 +710,7 @@ set_control_info(UUID, #state{node=Node
                          ]),
     defer_set_control_info(Node, Cmd, Arg).
 
--spec defer_set_control_info(node(), atom(), binary()) -> ok.
+-spec defer_set_control_info(node(), atom(), binary()) -> 'ok'.
 defer_set_control_info(Node, Cmd, Arg) ->
     _ = kz_process:spawn(fun set_control_info/3, [Node, Cmd, Arg]),
     'ok'.
@@ -729,7 +729,8 @@ handle_dialplan(JObj, #state{call_id=CallId
                             ,is_node_up=INU
                             ,command_q=CmdQ
                             ,current_cmd_uuid=CurrCmdId
-                            }=State) ->
+                            }=State
+               ) ->
     At = kz_term:to_atom(kz_json:get_value(<<"Insert-At">>, JObj, 'tail')),
     lager:debug("received dialpan cmd ~s to execute at ~s", [kapi_dialplan:application_name(JObj), At]),
     NewCmdQ = try
@@ -752,7 +753,7 @@ handle_dialplan(JObj, #state{call_id=CallId
                        }
     end.
 
-%% execute all commands in JObj immediately, irregardless of what is running (if anything).
+%% execute all commands in JObj immediately, regardless of what is running (if anything).
 -spec insert_command(state(), insert_at_options(), kz_json:object()) -> queue:queue().
 insert_command(#state{node=Node
                      ,call_id=CallId
@@ -774,20 +775,20 @@ insert_command(#state{node=Node
             'true' = kapi_dialplan:queue_v(JObj),
             Commands = kz_json:get_list_value(<<"Commands">>, JObj, []),
             DefJObj = kz_json:from_list(kz_api:extract_defaults(JObj)),
-            freeswitch:call_cmd_sync(true),
+            freeswitch:call_cmd_sync('true'),
             _ = execute_queue_commands(Commands, DefJObj, State),
-            freeswitch:call_cmd_sync(false),
+            freeswitch:call_cmd_sync('false'),
             CommandQ;
         <<"noop">> ->
-            freeswitch:call_cmd_sync(true),
+            freeswitch:call_cmd_sync('true'),
             _ = execute_control_request(JObj, State),
-            freeswitch:call_cmd_sync(false),
+            freeswitch:call_cmd_sync('false'),
             maybe_filter_queue(kz_json:get_value(<<"Filter-Applications">>, JObj), CommandQ);
         _ ->
             lager:debug("recv and executing ~s now!", [AName]),
-            freeswitch:call_cmd_sync(true),
+            freeswitch:call_cmd_sync('true'),
             _ = execute_control_request(JObj, State),
-            freeswitch:call_cmd_sync(false),
+            freeswitch:call_cmd_sync('false'),
             CommandQ
     end;
 insert_command(#state{node=Node, call_id=CallId, command_q=CmdQ, current_cmd_uuid=CurrCmdId}, 'flush', JObj) ->
@@ -803,7 +804,7 @@ insert_command(Q, Pos, _) ->
     lager:debug("received command for an unknown queue position: ~p", [Pos]),
     Q.
 
-maybe_force_queue_advance(_CallId, undefined, true) -> ok;
+maybe_force_queue_advance(_CallId, 'undefined', 'true') -> 'ok';
 maybe_force_queue_advance(CallId, _, _) ->
     self() ! {'force_queue_advance', CallId}.
 
