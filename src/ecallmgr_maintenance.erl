@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2021, 2600Hz
+%%% @copyright (C) 2012-2022, 2600Hz
 %%% @doc
 %%% This Source Code Form is subject to the terms of the Mozilla Public
 %%% License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -585,7 +585,7 @@ get_fs_nodes(Node) ->
 -spec modify_acls(kz_term:ne_binary(), kz_term:ne_binary(), kz_json:object(), acl_fun(), config_fun()) ->
           'no_return'.
 modify_acls(Name, IP0, ACLS, BuildACLFun, ConfigFun) ->
-    case kz_network_utils:resolve(IP0) of
+    case kz_network_utils:resolve(IP0, ecallmgr_util:get_resolve_options()) of
         [] ->
             Identities = [{'cidr', kz_network_utils:is_cidr(IP0)}
                          ,{'ip', kz_network_utils:is_ip(IP0)}
