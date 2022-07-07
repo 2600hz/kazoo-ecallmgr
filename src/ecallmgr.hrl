@@ -733,6 +733,7 @@
                              ,route_resp_xml_fun => dialplan_xml_fun()
                              ,winner => dialplan_winner()
                              ,blocked => boolean()
+                             ,request_headers => kz_term:proplist()
                              }.
 
 -define(ECALLMGR_HRL, 'true').
