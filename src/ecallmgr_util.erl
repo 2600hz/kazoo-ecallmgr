@@ -59,6 +59,8 @@
 
 -export([dialplan_application/1]).
 
+-export([get_resolve_options/0]).
+
 -ifdef(TEST).
 -export([endpoint_jobjs_to_records/1
         ,maybe_filter_failover_channels/2
@@ -1571,3 +1573,10 @@ use_kz_moh(Media, JObj) ->
 
 -spec set_prefix() -> kz_term:ne_binary().
 set_prefix() -> list_to_binary([?FS_MULTI_VAR_SEP_PREFIX, ?FS_MULTI_VAR_SEP]).
+
+-spec get_resolve_options() -> kz_term:proplist().
+get_resolve_options() ->
+    case kapps_config:is_true(?APP_NAME, <<"use_tcp">>, 'false') of
+        'true' -> kz_network_utils:default_options();
+        'false' -> props:set_value('usevc', 'false', kz_network_utils:default_options())
+    end.

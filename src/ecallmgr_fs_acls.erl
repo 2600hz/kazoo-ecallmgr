@@ -250,7 +250,7 @@ resolve_cidr(CIDR) ->
         'true' ->
             kz_network_utils:to_cidr(CIDR);
         'false' ->
-            IPs = kz_network_utils:resolve(CIDR),
+            IPs = kz_network_utils:resolve(CIDR, ecallmgr_util:get_resolve_options()),
             [kz_network_utils:to_cidr(IP) || IP <- IPs]
     end.
 
@@ -389,7 +389,7 @@ resolve_hostname(Collector, ResolveMe, Resource, ACLBuilderFun) ->
     lager:debug("attempting to resolve '~s'", [ResolveMe]),
     StrippedHost = hd(binary:split(ResolveMe, <<";">>)),
     case (not kz_network_utils:is_ipv4(StrippedHost))
-        andalso kz_network_utils:resolve(StrippedHost)
+        andalso kz_network_utils:resolve(StrippedHost, ecallmgr_util:get_resolve_options())
     of
         'false' ->
             maybe_capture_ip(Collector, ResolveMe, Resource, ACLBuilderFun);
