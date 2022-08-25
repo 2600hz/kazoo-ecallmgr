@@ -279,6 +279,10 @@ handle_loopback(DP, _Node, _UUID, _Channel, JObj) ->
     Keys = [<<"Simplify-Loopback">>, <<"Loopback-Bowout">>],
     handle_loopback_keys(Keys, JObj, DP).
 
+-spec continue_on_fail(kz_json:object()) -> kz_term:ne_binary().
+continue_on_fail(JObj) ->
+    continue_on_fail(JObj, 'true').
+
 -spec continue_on_fail(kz_json:object(), kz_term:ne_binary() | boolean()) -> kz_term:ne_binary().
 continue_on_fail(JObj, Default) ->
     case kz_json:get_value(<<"Continue-On-Fail">>, JObj) of
@@ -289,16 +293,6 @@ continue_on_fail(JObj, Default) ->
         _ -> kz_term:to_binary(Default)
     end.
 
--spec continue_on_fail_channel(channel(), kz_json:object()) -> kz_term:ne_binary().
-continue_on_fail_channel(#channel{is_loopback='true'
-                                 ,ccvs=CCVs
-                                 }
-                        ,JObj
-                        ) ->
-    continue_on_fail(JObj, kz_json:is_defined(<<"Inception-Account-ID">>, CCVs));
-continue_on_fail_channel(_, JObj) ->
-    continue_on_fail(JObj, 'true').
-
 -spec hangup_after_bridge(kz_json:object()) -> kz_term:ne_binary().
 hangup_after_bridge(JObj) ->
     case kz_json:get_boolean_value(<<"Continue-After">>, JObj) of
@@ -308,9 +302,9 @@ hangup_after_bridge(JObj) ->
     end.
 
 -spec pre_exec(kz_term:proplist(), atom(), kz_term:ne_binary(), channel(), kz_json:object()) -> kz_term:proplist().
-pre_exec(DP, _Node, _UUID, Channel, JObj) ->
+pre_exec(DP, _Node, _UUID, _Channel, JObj) ->
     [{"application", "export sip_redirect_context=context_2"}
-    ,{"application", list_to_binary(["set continue_on_fail=", continue_on_fail_channel(Channel, JObj)])}
+    ,{"application", list_to_binary(["set continue_on_fail=", continue_on_fail(JObj)])}
     ,{"application", list_to_binary(["set hangup_after_bridge=", hangup_after_bridge(JObj)])}
     | DP
     ].
