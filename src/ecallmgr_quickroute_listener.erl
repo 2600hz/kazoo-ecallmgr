@@ -35,7 +35,7 @@
 -record(state, {}).
 -type state() :: #state{}.
 
--define(BINDINGS, [{'route', [{'restrict_to', ['quickroute']}]}]).
+-define(BINDINGS, [{'route', [{'restrict_to', ['quickroute']}, 'federate']}]).
 -define(RESPONDERS, [{{?MODULE, 'handle_quickroute'}
                      ,[{<<"dialplan">>, <<"quickroute">>}]
                      }
