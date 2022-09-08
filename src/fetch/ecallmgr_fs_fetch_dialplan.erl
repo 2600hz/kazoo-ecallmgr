@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2011-2021, 2600Hz
+%%% @copyright (C) 2011-2022, 2600Hz
 %%% @doc Receive route(dialplan) requests from FS, request routes and respond
 %%%
 %%% @author James Aimonetti
@@ -43,12 +43,17 @@ dialplan(#{node := Node, fetch_id := FetchId, payload := FetchJObj}=Map) ->
     Routines = [fun call_id/1
                ,fun timeout/1
                ,{fun add_time_marker/2, 'start_processing'}
-               ,fun(M) -> M#{channel => kz_amqp_channel:consumer_channel()} end
-               ,fun(M) -> M#{callback => fun process/1} end
-               ,fun(M) -> M#{options => []} end
-               ,fun(M) -> M#{start_result => ecallmgr_call_control_manager:start_call_control(M)} end
+               ,fun init_kazoo/1
                ],
     {'ok', kz_maps:exec(Routines, Map)}.
+
+init_kazoo(M) ->
+    lager:info("init KAZOO: ~p", [M]),
+    M1 = M#{channel => kz_amqp_channel:consumer_channel()
+           ,callback => fun process/1
+           ,options => []
+           },
+    M1#{start_result => ecallmgr_call_control_manager:start_call_control(M1)}.
 
 -spec process(dialplan_context()) -> {'ok', dialplan_context()}.
 process(#{payload := FetchJObj, channel := Channel}=Map) ->
@@ -57,6 +62,8 @@ process(#{payload := FetchJObj, channel := Channel}=Map) ->
     Routines = [{fun add_time_marker/2, 'request_ready'}
                ,fun control_p/1
                ,fun request/1
+               ,fun request_headers/1
+               ,fun is_quickrouted/1
                ,fun block_call_routines/1
                ,fun apply_formatters/1
                ,fun timeout_reply/1
@@ -68,6 +75,15 @@ process(#{payload := FetchJObj, channel := Channel}=Map) ->
 request(#{request := _Request}=Map) -> Map;
 request(#{control_q := ControlQ, control_p := ControlP, payload := FetchJObj}=Map) ->
     Map#{request => kz_json:set_value(?KEY_SERVER_ID, kapi:encode_pid(ControlQ, ControlP), FetchJObj)}.
+
+-spec request_headers(dialplan_context()) -> dialplan_context().
+request_headers(#{request_headers := _}=Map) -> Map;
+request_headers(#{call_id := CallId, core_uuid := CoreUUID}=Map) ->
+    Headers = [{<<"call-id">>, 'binary', CallId}
+              ,{<<"core-uuid">>, 'binary', kz_term:to_binary(CoreUUID)}
+              ],
+    KAPIHeaders = [{'headers', Headers}],
+    Map#{request_headers => KAPIHeaders}.
 
 -spec control_p(dialplan_context()) -> dialplan_context().
 control_p(#{control_p := _Pid}=Map) -> Map;
@@ -102,6 +118,7 @@ add_time_marker(#{}= Map, Name, Value) ->
 
 -spec maybe_authz(dialplan_context()) -> dialplan_context().
 maybe_authz(#{blocked := 'true'}=Map) -> Map;
+maybe_authz(#{reply := #{payload := _Payload}}=Map) -> Map;
 maybe_authz(#{authz_worker := _Authz}=Map) -> Map;
 maybe_authz(#{}=Map) ->
     case kapps_config:is_true(?APP_NAME, <<"authz_enabled">>, 'false') of
@@ -121,14 +138,17 @@ maybe_expired(Map) ->
 -spec maybe_blocked(dialplan_context()) -> {'ok', dialplan_context()}.
 maybe_blocked(#{blocked := 'true'}=Map) ->
     send_reply(Map);
-maybe_blocked(#{request := Request}=Map) ->
-    kapi_route:publish_req(Request),
+maybe_blocked(#{reply := #{payload := _Payload}}=Map) ->
+    send_reply(Map);
+maybe_blocked(#{request := Request, request_headers := Headers}=Map) ->
+    kapi_route:publish_req(Request, Headers),
     wait_for_route_resp(add_time_marker(Map, 'request_sent')).
 
 -spec wait_for_route_resp(dialplan_context()) -> {'ok', dialplan_context()}.
 wait_for_route_resp(#{timeout := TimeoutMs, fetch_id := FetchId}=Map) ->
     lager:debug("waiting ~B ms for route response to request ~s"
-               ,[TimeoutMs, FetchId]),
+               ,[TimeoutMs, FetchId]
+               ),
     StartTime = kz_time:start_time(),
     receive
         {'kapi', {_, {'dialplan', 'route_resp'}, Resp}} ->
@@ -136,12 +156,19 @@ wait_for_route_resp(#{timeout := TimeoutMs, fetch_id := FetchId}=Map) ->
                 'true' ->
                     NewTimeoutMs = TimeoutMs - kz_time:elapsed_ms(StartTime),
                     lager:debug("received deferred reply for ~s - waiting for others for ~B ms"
-                               ,[FetchId, NewTimeoutMs]),
-                    wait_for_route_resp(Map#{timeout => NewTimeoutMs, reply => #{payload => Resp}});
+                               ,[FetchId, NewTimeoutMs]
+                               ),
+                    wait_for_route_resp(Map#{timeout => NewTimeoutMs
+                                            ,reply => #{payload => Resp}
+                                            }
+                                       );
                 'false' ->
                     lager:info("received route reply for ~s", [FetchId]),
                     NewTimeoutMs = TimeoutMs - kz_time:elapsed_ms(StartTime),
-                    maybe_wait_for_authz(Map#{reply => #{payload => Resp}, authz_timeout => NewTimeoutMs})
+                    maybe_wait_for_authz(Map#{reply => #{payload => Resp}
+                                             ,authz_timeout => NewTimeoutMs
+                                             }
+                                        )
             end
     after TimeoutMs ->
             lager:warning("timeout after ~B receiving route response for ~s"
@@ -203,6 +230,7 @@ send_reply(#{node := Node, fetch_id := FetchId, reply := #{payload := Reply}}=Co
     {'ok', XML} = ecallmgr_fs_xml:route_resp_xml('dialplan', Reply, Context),
     lager:debug("sending xml dialplan reply for request ~s to ~s", [FetchId, Node]),
     _ = freeswitch:fetch_reply(Context#{reply => iolist_to_binary(XML)}),
+
     case kz_api:defer_response(Reply)
         orelse kz_json:get_ne_binary_value(<<"Method">>, Reply) =/= <<"park">>
     of
@@ -259,6 +287,7 @@ error_message(ErrorCode, ErrorMsg) ->
 
 -spec timeout_reply(dialplan_context()) -> dialplan_context().
 timeout_reply(#{blocked := 'true'} = Map) -> Map;
+timeout_reply(#{reply := #{payload := _Payload}}=Map) -> Map;
 timeout_reply(Map) ->
     Map#{reply => #{payload => error_message()}}.
 
@@ -293,10 +322,23 @@ block_call_routines(Map) ->
 block_call_routine({_Fun, {_Code, _Msg}}, #{blocked := 'true'}=Map) -> Map;
 block_call_routine({Fun, {Code, Msg}}, #{request := JObj}=Map) ->
     case Fun(JObj) of
-        'true' -> Map#{reply => #{payload => error_message(Code, Msg)}
-                      ,blocked => 'true'
-                      };
-        'false' -> Map
+        'false' -> Map;
+        'true' ->
+            Map#{reply => #{payload => error_message(Code, Msg)}
+                ,blocked => 'true'
+                }
+    end.
+
+is_quickrouted(#{request := JObj}=Map) ->
+    [RequestUser, _RequestRealm] = binary:split(kz_json:get_ne_binary_value(<<"Request">>, JObj), <<"@">>),
+    [ToUser, _ToRealm] = binary:split(kz_json:get_ne_binary_value(<<"To">>, JObj), <<"@">>),
+    CalleeNumber = kz_json:get_binary_value(<<"Callee-ID-Number">>, JObj),
+
+    case ecallmgr_quickroute_listener:get_quickroute([RequestUser, ToUser, CalleeNumber]) of
+        'undefined' -> Map;
+        QuickRoute ->
+            lager:notice("using a quickroute: ~p", [QuickRoute]),
+            Map#{reply => #{payload => QuickRoute}}
     end.
 
 -spec should_block_anonymous(kz_json:object()) -> boolean().

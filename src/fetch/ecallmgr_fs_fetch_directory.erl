@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2011-2021, 2600Hz
+%%% @copyright (C) 2011-2022, 2600Hz
 %%% @doc Directory lookups from FS
 %%%
 %%% @author James Aimonetti
@@ -79,7 +79,7 @@ lookup_directory(_EndpointId, _Realm, Context) ->
 
 -spec directory_not_found(map()) -> fs_handlecall_ret().
 directory_not_found(#{node := Node, fetch_id := FetchId} = Context) ->
-    {'ok', Xml} = ecallmgr_fs_xml:not_found(),
+    {'ok', Xml} = ecallmgr_fs_xml:not_found(<<"directory">>),
     lager:debug("sending directory not found XML to ~w as reply for ~s"
                ,[Node, FetchId]
                ),
@@ -95,7 +95,7 @@ validate_token(#{payload := JObj}=Context) ->
 -type validate_token_result() :: {'ok', kz_json:object()} | {'error', any()}.
 
 -spec validate_token(map(), validate_token_result()) -> fs_handlecall_ret().
-validate_token(#{fetch_id := FetchId}=Context, {error, Error}) ->
+validate_token(#{fetch_id := FetchId}=Context, {'error', Error}) ->
     lager:warning("fetch request ~s has an invalid token : ~s"
                  ,[FetchId, Error]
                  ),
@@ -123,7 +123,7 @@ validate_rpc_token(#{payload := JObj}=Context) ->
 -type validate_rpc_token_result() :: {'ok', kz_json:object()} | {'error', any()}.
 
 -spec validate_rpc_token(map(), validate_rpc_token_result()) -> fs_handlecall_ret().
-validate_rpc_token(#{fetch_id := FetchId}=Context, {error, Error}) ->
+validate_rpc_token(#{fetch_id := FetchId}=Context, {'error', Error}) ->
     lager:warning("fetch request ~s has an invalid token : ~s"
                  ,[FetchId, Error]
                  ),

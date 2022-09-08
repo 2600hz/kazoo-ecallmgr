@@ -55,10 +55,14 @@
 %% @doc Starts the server.
 %% @end
 %%------------------------------------------------------------------------------
--spec start_link(map()) -> kz_types:startlink_ret().
+-type originate_args() :: #{node := node() %% FS node from ecallmgr_fs_resource handler
+                           ,queue := kz_term:ne_binary() %% gen_listener targeted queue for ecallmgr_fs_resource
+                           ,payload := kapi_resource:originate_req()
+                           ,channel := pid() %% AMQP channel pid
+                           }.
+-spec start_link(originate_args()) -> kz_types:startlink_ret().
 start_link(Map) ->
     gen_server:start_link(?SERVER, [Map], []).
-
 
 %%%=============================================================================
 %%% gen_server callbacks
@@ -68,13 +72,14 @@ start_link(Map) ->
 %% @doc Initializes the server.
 %% @end
 %%------------------------------------------------------------------------------
--spec init([map()]) -> {'stop', 'normal'} | {'ok', state()}.
-init([Map]) ->
-    #{payload := JObj
-     ,node := Node
-     ,queue := Queue
-     ,channel := Channel
-     } = Map,
+-spec init([originate_args()]) ->
+          {'ok', state()} |
+          {'stop', 'normal'}.
+init([#{payload := JObj
+       ,node := Node
+       ,queue := Queue
+       ,channel := Channel
+       }]) ->
     _ = kz_log:put_callid(JObj),
     kz_amqp_channel:consumer_channel(Channel),
     ServerId = kz_api:server_id(JObj),
@@ -87,8 +92,8 @@ init([Map]) ->
         'true' ->
             ControllerQ = kz_api:queue_id(JObj),
             bind_to_originate_events(Node, OriginateUUID),
-            gen_server:cast(self(), originate_action),
-            {'ok', #state{node=Node
+            gen_server:cast(self(), 'originate_action'),
+            {'ok', #state{node=fs_node_to_use(JObj, Node)
                          ,originate_req=JObj
                          ,server_id=ServerId
                          ,controller_q = ControllerQ
@@ -98,10 +103,28 @@ init([Map]) ->
                          }}
     end.
 
+fs_node_to_use(JObj, Node) ->
+    case kz_json:get_binary_value(<<"Existing-Call-ID">>, JObj) of
+        'undefined' ->
+            lager:info("using configured media node ~s", [Node]),
+            Node;
+        ExistingCallId ->
+            case ecallmgr_fs_channel:node(ExistingCallId) of
+                {'ok', FSNode} ->
+                    lager:info("existing call_id ~s on ~s, using that", [ExistingCallId, FSNode]),
+                    FSNode;
+                {'error', 'not_found'} ->
+                    lager:info("existing call_id ~s not found, using configured node ~s"
+                              ,[ExistingCallId, Node]
+                              ),
+                    Node
+            end
+    end.
+
 -spec bind_to_originate_events(atom(), kz_term:ne_binary()) -> 'ok'.
 bind_to_originate_events(Node, OriginateUUID) ->
     gproc:reg({'p', 'l', ?FS_EVENT_ORIGINATE_MSG_UUID(Node, OriginateUUID)}),
-    ok.
+    'ok'.
 
 %%------------------------------------------------------------------------------
 %% @doc Handling call messages.
@@ -138,7 +161,7 @@ handle_cast('build_originate', #state{originate_req=JObj
     end,
     {'noreply', State#state{dialstrings=build_originate(Action, JObj)}};
 
-handle_cast('originate_ready', #state{dialstrings=undefined
+handle_cast('originate_ready', #state{dialstrings='undefined'
                                      ,server_id=ServerId
                                      ,originate_uuid=UUID
                                      ,originate_req=JObj
@@ -146,7 +169,7 @@ handle_cast('originate_ready', #state{dialstrings=undefined
     _ = publish_error(<<"no dialstring">>, UUID, JObj, ServerId),
     {'stop', 'normal', State};
 
-handle_cast('originate_execute', #state{dialstrings=undefined
+handle_cast('originate_execute', #state{dialstrings='undefined'
                                        ,server_id=ServerId
                                        ,originate_uuid=UUID
                                        ,originate_req=JObj
@@ -154,7 +177,7 @@ handle_cast('originate_execute', #state{dialstrings=undefined
     _ = publish_error(<<"no dialstring">>, UUID, JObj, ServerId),
     {'stop', 'normal', State};
 
-handle_cast('originate_ready', #state{server_id=undefined}=State) ->
+handle_cast('originate_ready', #state{server_id='undefined'}=State) ->
     lager:debug("originate command is ready, but no server-id, sending execute"),
     gen_server:cast(self(), 'originate_execute'),
     {'noreply', State};
@@ -169,21 +192,21 @@ handle_cast('originate_ready', #state{queue=Queue
     lager:debug("originate command is ready, waiting for originate_execute"),
     {'noreply', State#state{tref=start_abandon_timer()}};
 
-handle_cast(originate_execute, #state{tref=TRef}=State) when is_reference(TRef) ->
+handle_cast('originate_execute', #state{tref=TRef}=State) when is_reference(TRef) ->
     _ = erlang:cancel_timer(TRef),
-    handle_cast(originate_execute, State#state{tref='undefined'});
+    handle_cast('originate_execute', State#state{tref='undefined'});
 
-handle_cast(originate_execute, #state{dialstrings=Dialstrings
-                                     ,node=Node
-                                     ,originate_uuid=OriginateUUID
-                                     }=State) ->
-    {noreply, State#state{originate_pid_ref = originate_execute(Node, OriginateUUID, Dialstrings)}};
+handle_cast('originate_execute', #state{dialstrings=Dialstrings
+                                       ,node=Node
+                                       ,originate_uuid=OriginateUUID
+                                       }=State) ->
+    {'noreply', State#state{originate_pid_ref = originate_execute(Node, OriginateUUID, Dialstrings)}};
 
-handle_cast(originate_cancel, #state{node=Node
-                                    ,originate_uuid=OriginateUUID
-                                    }=State) ->
+handle_cast('originate_cancel', #state{node=Node
+                                      ,originate_uuid=OriginateUUID
+                                      }=State) ->
     _ = freeswitch:api(Node, 'kz_originate_cancel', OriginateUUID),
-    {noreply, State};
+    {'noreply', State};
 
 handle_cast(_Msg, State) ->
     lager:debug("unhandled cast: ~p", [_Msg]),
@@ -194,58 +217,68 @@ handle_cast(_Msg, State) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec handle_info(any(), state()) -> kz_types:handle_info_ret_state(state()).
-handle_info({'kapi', {{_Ex, _RK, {_Basic, _Deliver}}, {dialplan, originate_execute}, _Payload}}, State) ->
+handle_info({'kapi', {{_Ex, _RK, {_Basic, _Deliver}}
+                     ,{'dialplan', 'originate_execute'}
+                     ,_Payload
+                     }}
+           ,State
+           ) ->
     lager:info("received originate execute"),
     gen_server:cast(self(), 'originate_execute'),
     {'noreply', State};
 
-handle_info({'kapi', {{_Ex, _RK, {_Basic, _Deliver}}, {dialplan, originate_cancel}, _Payload}}, State) ->
+handle_info({'kapi', {{_Ex, _RK, {_Basic, _Deliver}}
+                     ,{'dialplan', 'originate_cancel'}
+                     ,_Payload
+                     }}
+           ,State
+           ) ->
     lager:info("received originate cancel"),
     gen_server:cast(self(), 'originate_cancel'),
     {'noreply', State};
 
-handle_info(abandon_originate, #state{tref='undefined'}=State) ->
+handle_info('abandon_originate', #state{tref='undefined'}=State) ->
     %% Cancelling a timer does not guarantee that the message has not
     %% already been delivered to the message queue.
     {'noreply', State};
 
-handle_info(abandon_originate, #state{originate_req=JObj
-                                     ,originate_uuid=UUID
-                                     ,server_id=ServerId
-                                     }=State) ->
+handle_info('abandon_originate', #state{originate_req=JObj
+                                       ,originate_uuid=UUID
+                                       ,server_id=ServerId
+                                       }=State) ->
     Error = <<"Failed to receive valid originate_execute in time">>,
     publish_error(Error, UUID, JObj, ServerId),
     {'stop', 'normal', State};
 
-handle_info({originate_result, {ok, UUID}}, #state{originate_uuid=OriginateUUID
-                                                  ,controller_q=undefined
-                                                  }=State) ->
+handle_info({'originate_result', {'ok', UUID}}, #state{originate_uuid=OriginateUUID
+                                                      ,controller_q='undefined'
+                                                      }=State) ->
     lager:debug("originate completed with no controller queue for: ~s / ~s", [OriginateUUID, UUID]),
     {'stop', 'normal', State};
-handle_info({originate_result, {ok, UUID}}, #state{originate_req=JObj
-                                                  ,originate_uuid=OriginateUUID
-                                                  ,controller_q=ServerId
-                                                  ,start_control_process=true
-                                                  }=State) ->
+handle_info({'originate_result', {'ok', UUID}}, #state{originate_req=JObj
+                                                      ,originate_uuid=OriginateUUID
+                                                      ,controller_q=ServerId
+                                                      ,start_control_process='true'
+                                                      }=State) ->
     lager:debug("originate completed for: ~s / ~s", [OriginateUUID, UUID]),
-    {ok, #state{control_pid=CtrlPid}=NewState} = start_control_process(State#state{uuid=UUID}),
+    {'ok', #state{control_pid=CtrlPid}=NewState} = start_control_process(State#state{uuid=UUID}),
     CtrlQ = ecallmgr_call_control:queue_name(CtrlPid),
     publish_originate_resp(ServerId, JObj, OriginateUUID, UUID, CtrlQ),
     {'stop', 'normal', NewState};
 
-handle_info({originate_result, {ok, UUID}}, #state{originate_req=JObj
-                                                  ,originate_uuid=OriginateUUID
-                                                  ,controller_q=ServerId
-                                                  ,start_control_process=false
-                                                  }=State) ->
+handle_info({'originate_result', {'ok', UUID}}, #state{originate_req=JObj
+                                                      ,originate_uuid=OriginateUUID
+                                                      ,controller_q=ServerId
+                                                      ,start_control_process='false'
+                                                      }=State) ->
     lager:debug("originate completed without starting control queue for: ~s", [UUID]),
     publish_originate_resp(ServerId, JObj, OriginateUUID, UUID),
     {'stop', 'normal', State};
 
-handle_info({originate_result, {error, Error}}, #state{originate_req=JObj
-                                                      ,originate_uuid=OriginateUUID
-                                                      ,controller_q=ServerId
-                                                      }=State) ->
+handle_info({'originate_result', {'error', Error}}, #state{originate_req=JObj
+                                                          ,originate_uuid=OriginateUUID
+                                                          ,controller_q=ServerId
+                                                          }=State) ->
     publish_error(Error, OriginateUUID, JObj, ServerId),
     {'stop', 'normal', State};
 
@@ -262,7 +295,7 @@ handle_info(_Info, State) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec terminate(any(), state()) -> 'ok'.
-terminate(_Reason, _State) -> ok.
+terminate(_Reason, _State) -> 'ok'.
 
 %%------------------------------------------------------------------------------
 %% @doc Convert process state when code is changed.
@@ -319,7 +352,7 @@ get_transfer_action(JObj, Route) ->
     UnsetVars = get_unset_vars(JObj),
     list_to_binary(
       ["'m:^:", UnsetVars
-      ,"transfer:", Route
+      ," transfer:", Route
       ," XML ", Context, "' inline"
       ]
      ).
@@ -389,7 +422,7 @@ get_channel_vars(JObj) ->
     InteractionId = kz_json:get_value([<<"Custom-Channel-Vars">>, <<?CALL_INTERACTION_ID>>], JObj, ?CALL_INTERACTION_DEFAULT),
     CCVs = [{<<"Ecallmgr-Node">>, kz_term:to_binary(node())}
            ,{<<?CALL_INTERACTION_ID>>, InteractionId}
-           ,{<<"Call-Flag-NO-Flip">>, true}
+           ,{<<"Call-Flag-NO-Flip">>, 'true'}
            ],
     J = kz_json:from_list_recursive([{<<"Custom-Channel-Vars">>, add_ccvs(JObj, CCVs)}]),
     ecallmgr_fs_xml:get_channel_vars(kz_json:merge(JObj, J)).
@@ -440,8 +473,16 @@ get_unset_vars(JObj) ->
                                     ),
                    ([K, _] = string:tokens(binary_to_list(KV), "=")) =/= 'undefined'
              ],
+
+    %% Maintain CAVs on b-legs
+    WithoutCAVs = kz_json:delete_key(<<"Custom-Application-Vars">>, JObj),
+    VarsToUnset = lists:foldr(fun ecallmgr_fs_xml:kazoo_var_to_fs_var/2
+                             ,[]
+                             ,kz_json:to_proplist(WithoutCAVs)
+                             ),
+
     case ["unset:" ++ K
-          || KV <- lists:foldr(fun ecallmgr_fs_xml:kazoo_var_to_fs_var/2, [], kz_json:to_proplist(JObj))
+          || KV <- VarsToUnset
                  ,not lists:member(begin [K, _] = string:tokens(binary_to_list(KV), "="), K end, Export)]
     of
         [] -> "";
