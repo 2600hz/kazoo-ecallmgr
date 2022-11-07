@@ -433,6 +433,7 @@ route_resp_log_winning_node() ->
 route_resp_set_winning_node() ->
     action_el(<<"export">>, [?SET_CCV(<<"Ecallmgr-Node">>, (kz_term:to_binary(node())))], true).
 
+-spec route_resp_fire_route_win(kz_json:object(), dialplan_context()) -> kz_types:xml_el().
 route_resp_fire_route_win(JObj, #{'control_q' := ControlQ
                                  ,'fetch_id' := FetchId
                                  }) ->
@@ -444,6 +445,13 @@ route_resp_fire_route_win(JObj, #{'control_q' := ControlQ
              ,{<<"Controller-Queue">>, kz_api:server_id(JObj)}
              ,{<<"Fetch-UUID">>, FetchId}
              ],
+    Args = [<<K/binary, "=", V/binary>> || {K, V} <- Params, kz_term:is_not_empty(V)],
+    EventApp = kz_app_config:get_ne_binary(?APP, [<<"dialplan">>, <<"apps">>, <<"event">>], <<"kz_deliver_event">>),
+    action_el(EventApp, kz_binary:join(Args, <<",">>)).
+
+-spec route_resp_channel_update(kz_json:object(), dialplan_context()) -> kz_types:xml_el().
+route_resp_channel_update(_JObj, _Context) ->
+    Params = [{<<"Event-Name">>, <<"CHANNEL_DATA">>}],
     Args = [<<K/binary, "=", V/binary>> || {K, V} <- Params, kz_term:is_not_empty(V)],
     EventApp = kz_app_config:get_ne_binary(?APP, [<<"dialplan">>, <<"apps">>, <<"event">>], <<"kz_deliver_event">>),
     action_el(EventApp, kz_binary:join(Args, <<",">>)).
@@ -1576,6 +1584,7 @@ route_resp_park_xml(JObj, DialplanContext) ->
             ,unset_custom_sip_headers()
             ,route_resp_set_originating_proxy(DialplanContext)
             ,route_resp_fire_route_win(JObj, DialplanContext)
+            ,route_resp_channel_update(JObj, DialplanContext)
             ,route_resp_park()
             ],
     [E || E <- Exten, E =/= 'undefined'].
