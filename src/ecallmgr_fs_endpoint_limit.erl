@@ -86,13 +86,13 @@ get_bridge_ids_from_responses({'ok', Rs}) ->
     %% The response is a list of lists, in the form of:
     %% `{ok, [[ChannelsFromEcallmgr1], [...], [ChannelsFromEcallmgrN]]}'
     BridgeIds = [[kz_json:get_ne_binary_value(<<"bridge_id">>, Channel)
-                 || Channel <- kz_json:get_list_value(<<"Channels">>, EcallmgrResp)
+                  || Channel <- kz_json:get_list_value(<<"Channels">>, EcallmgrResp)
                  ]
-                || EcallmgrResp <- Rs
+                 || EcallmgrResp <- Rs
                 ],
     lists:usort(lists:flatten(BridgeIds));
 get_bridge_ids_from_responses(_Other) ->
-    lager:notice("unexpected response trying to list channels per endpoint_id: ~p", [_Other]),
+    lager:warning("unexpected response trying to list channels per endpoint_id: ~p", [_Other]),
     %% Returning an empty list, just to avoid blocking the callee from receiving calls.
     [].
 
