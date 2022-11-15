@@ -394,6 +394,7 @@
                               ,{<<"KAZOO-AOR">>, <<"sip_h_X-KAZOO-AOR">>}
                               ,{<<"Application-UUID">>, <<"app_uuid">>}
                               ,{<<"Application-UUID-Name">>, <<"app_uuid_name">>}
+                              ,{<<"RTP-Disable-Hold">>, <<"rtp_disable_hold">>}
                               ]).
 
 -define(CALLER_PROFILE_VARS, [{<<"Caller-ID-Name">>, <<"caller_id_name">>}
