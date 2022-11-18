@@ -40,6 +40,10 @@
 
 -type state() :: 'ok'.
 -type endpoint_limit_req() :: kz_json:object().
+-type request() :: kz_term:api_terms().
+-type endpoint_type() :: kz_term:ne_binary(). %% account, user, or device.
+-type endpoint_id() :: kz_term:ne_binary().
+-type pub_fun() :: fun((kz_term:api_terms()) -> 'ok').
 
 %%%=============================================================================
 %%% API
@@ -60,39 +64,77 @@ start_link() ->
                             ], []).
 
 -spec handle_enforce_endpoint_limit_req(endpoint_limit_req(), kz_term:proplist()) -> 'ok'.
-handle_enforce_endpoint_limit_req(JObj, _Props) ->
+handle_enforce_endpoint_limit_req(JObj, Props) ->
     'true' = kapi_call:enforce_endpoint_limit_req_v(JObj),
+    BaseReq = [{<<"Fields">>, <<"all">>}
+              ,{<<"Active-Only">>, 'true'}
+              | kz_api:default_headers(?APP_NAME, ?APP_VERSION)
+              ],
+    EndpointType = kz_json:get_ne_binary_value(<<"Endpoint-Type">>, JObj),
     EndpointId = kz_json:get_ne_binary_value(<<"Endpoint-ID">>, JObj),
-    _EndpointType = kz_json:get_ne_binary_value(<<"Endpoint-Type">>, JObj),
-    EndpointLimit = kz_json:get_integer_value(<<"Endpoint-Limit">>, JObj),
-    Req = [{<<"Authorizing-IDs">>, [EndpointId]}
-          ,{<<"Fields">>, <<"all">>}
-          ,{<<"Active-Only">>, 'false'}
-          | kz_api:default_headers(?APP_NAME, ?APP_VERSION)
-          ],
+    handle_enforce_endpoint_limit_req(JObj, Props, BaseReq, EndpointType, EndpointId).
 
-    Resps = kz_amqp_worker:call_collect(Req
-                                       ,fun kapi_call:publish_query_user_channels_req/1
-                                       ,{'ecallmgr', fun kapi_call:query_user_channels_resp_v/1, 'true', 'true'}
-                                       ),
+%%------------------------------------------------------------------------------
+%% @doc Build the actual request and select the appropriate publish and response validation
+%% functions based on EndpointType's value.
+%% @end
+%%------------------------------------------------------------------------------
+-spec handle_enforce_endpoint_limit_req(endpoint_limit_req()
+                                       ,kz_term:proplist()
+                                       ,request()
+                                       ,endpoint_type()
+                                       ,endpoint_id()
+                                       ) -> 'ok'.
+handle_enforce_endpoint_limit_req(JObj, Props, BaseReq, <<"account">>=EndpointType, EndpointId) ->
+    Req = [{<<"Account-ID">>, EndpointId} | BaseReq],
+    PubFun = fun kapi_call:publish_query_account_channels_req/1,
+    handle_enforce_endpoint_limit_req(JObj, Props, Req, EndpointType, EndpointId, PubFun);
+handle_enforce_endpoint_limit_req(JObj, Props, BaseReq, <<"user">>=EndpointType, EndpointId) ->
+    Req = [{<<"Owner-ID">>, EndpointId} | BaseReq],
+    PubFun = fun kapi_call:publish_query_user_channels_req/1,
+    handle_enforce_endpoint_limit_req(JObj, Props, Req, EndpointType, EndpointId, PubFun);
+handle_enforce_endpoint_limit_req(JObj, Props, BaseReq, <<"device">>=EndpointType, EndpointId) ->
+    Req = [{<<"Auth-ID">>, EndpointId} | BaseReq],
+    PubFun = fun kapi_call:publish_query_auth_id_req/1,
+    handle_enforce_endpoint_limit_req(JObj, Props, Req, EndpointType, EndpointId, PubFun).
+
+-spec handle_enforce_endpoint_limit_req(endpoint_limit_req()
+                                       ,kz_term:proplist()
+                                       ,request()
+                                       ,endpoint_type()
+                                       ,endpoint_id()
+                                       ,pub_fun()
+                                       ) -> 'ok'.
+handle_enforce_endpoint_limit_req(JObj, _Props, Req, EndpointType, EndpointId, PubFun) ->
+    EndpointLimit = kz_json:get_integer_value(<<"Endpoint-Limit">>, JObj),
+    Resps = kz_amqp_worker:call_collect(Req, PubFun, {'ecallmgr', 'true'}),
     CurrentCount = length(get_bridge_ids_from_responses(Resps)),
-    lager:debug("~s ~s has ~B out of ~B maximum concurrent calls",
-                [_EndpointType, EndpointId, CurrentCount, EndpointLimit]),
+    lager:debug("~s ~s is using ~B out of ~B allowed channels",
+                [EndpointType, EndpointId, CurrentCount, EndpointLimit]),
     publish_enforce_endpoint_limit_resp(JObj, CurrentCount =:= EndpointLimit).
 
-
+%%------------------------------------------------------------------------------
+%% @doc Get `bridge_ids' value from every channel in the response, remove duplicated value and
+%% returns the counting of the elements in the resulting list.
+%% @end
+%%------------------------------------------------------------------------------
 -spec get_bridge_ids_from_responses(kz_amqp_worker:request_return()) -> kz_term:ne_binaries().
-get_bridge_ids_from_responses({'ok', Rs}) ->
-    %% The response is a list of lists, in the form of:
-    %% `{ok, [[ChannelsFromEcallmgr1], [...], [ChannelsFromEcallmgrN]]}'
+get_bridge_ids_from_responses({'ok', Resps}) ->
+    lager:debug("received responses from ~B ecallmgr nodes", [length(Resps)]),
+    %% The response is a list of kz_json:objects(), 1 object per ecallmgr reply, in the form of:
+    %% `{ok, [{[{<<"Channels">>, ChannelsFromEcallmgr1}, ...]}'
+    %% `     ,{[{<<"Channels">>, ChannelsFromEcallmgrN}, ...]}'
+    %% `     ]}'
     BridgeIds = [[kz_json:get_ne_binary_value(<<"bridge_id">>, Channel)
                   || Channel <- kz_json:get_list_value(<<"Channels">>, EcallmgrResp)
                  ]
-                 || EcallmgrResp <- Rs
+                 || EcallmgrResp <- Resps
                 ],
+    %% Flatten resulting list, that way all the values are at the same depth=1 level, and then
+    %% remove duplicated values, if any.
     lists:usort(lists:flatten(BridgeIds));
-get_bridge_ids_from_responses(_Other) ->
-    lager:warning("unexpected response trying to list channels per endpoint_id: ~p", [_Other]),
+get_bridge_ids_from_responses(_Unexpected) ->
+    lager:warning("unexpected channels listing response: ~p", [_Unexpected]),
     %% Returning an empty list, just to avoid blocking the callee from receiving calls.
     [].
 
