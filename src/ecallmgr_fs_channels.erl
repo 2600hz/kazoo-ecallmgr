@@ -303,8 +303,12 @@ handle_query_user_channels(JObj, _Props) ->
                         'undefined' -> [];
                         AuthIds -> find_by_authorizing_id(AuthIds)
                     end,
-    UserChannels2 = lists:keymerge(1, UserChannels0, UserChannels1),
-    handle_query_users_channels(JObj, UserChannels2).
+    UserChannels2 = case kz_json:get_value(<<"Owner-ID">>, JObj) of
+                        'undefined' -> [];
+                        OwnerId -> find_by_owner_id(OwnerId)
+                    end,
+    UserChannels3 = lists:keymerge(1, lists:keymerge(1, UserChannels0, UserChannels1), UserChannels2),
+    handle_query_users_channels(JObj, UserChannels3).
 
 -spec handle_query_users_channels(kz_json:object(), kz_term:proplist()) -> 'ok'.
 handle_query_users_channels(JObj, Cs) ->
@@ -784,6 +788,19 @@ find_by_user_realm(Username, Realm) ->
     lager:debug("search channels for user ~s in realm ~s", [Username, Realm]),
     Pattern = #channel{username=Username
                       ,realm=kz_term:to_lower_binary(Realm)
+                      ,_='_'},
+    case ets:match_object(?CHANNELS_TBL, Pattern) of
+        [] -> [];
+        Channels ->
+            [{Channel#channel.uuid, ecallmgr_fs_channel:to_json(Channel)}
+             || Channel <- Channels
+            ]
+    end.
+
+-spec find_by_owner_id(kz_term:ne_binary()) -> [] | kz_term:proplist().
+find_by_owner_id(OwnerId) ->
+    lager:debug("search channels for endpoints owned by ~s", [OwnerId]),
+    Pattern = #channel{owner_id=OwnerId
                       ,_='_'},
     case ets:match_object(?CHANNELS_TBL, Pattern) of
         [] -> [];
