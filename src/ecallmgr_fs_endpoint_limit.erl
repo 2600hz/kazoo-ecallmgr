@@ -27,8 +27,6 @@
 
 -include("ecallmgr.hrl").
 
--define(SERVER, ?MODULE).
-
 -define(RESPONDERS, [{{?MODULE, 'handle_enforce_endpoint_limit_req'}
                      ,[{<<"channel">>, <<"enforce_endpoint_limit_req">>}]
                      }
