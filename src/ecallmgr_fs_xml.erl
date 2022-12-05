@@ -1925,11 +1925,13 @@ kz_endpoint_separator() ->
 -define(EXCLUDE_VARIABLE_GROUPS, []).
 
 -define(DIRECTORY_VARIABLES_KEYS, [<<"Custom-Channel-Vars">>
+                                  ,<<"Custom-Application-Vars">>
                                   ,<<"Codecs">>
                                   ]).
 
 -spec get_directory_variables(kz_json:object()) -> kz_types:xml_els().
 get_directory_variables(JObj) ->
+    lager:debug("get_directory_variables : JObj ~s", [JObj]),
     Fun = fun(Key, Acc) -> get_directory_variables(Key, JObj, Acc) end,
     lists:foldl(Fun, [], ?DIRECTORY_VARIABLES_KEYS).
 
