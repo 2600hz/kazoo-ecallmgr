@@ -869,9 +869,6 @@ kazoo_var_to_fs_var_fold(K, V, Acc) ->
             Val = ecallmgr_util:maybe_sanitize_fs_value(K, V),
             Prefix = <<?CHANNEL_VAR_PREFIX, K/binary>>,
             [encode_fs_val(Prefix, Val) | Acc];
-        {_, <<"group_confirm_file">>=Prefix} ->
-            Val = kz_term:to_list(ecallmgr_util:media_path(V, 'extant', get('callid'), kz_json:new())),
-            [encode_fs_val(Prefix, Val) | Acc];
         {_, Prefix} ->
             Val = ecallmgr_util:maybe_sanitize_fs_value(K, V),
             [encode_fs_val(Prefix, Val) | Acc]
@@ -935,7 +932,7 @@ get_profile_params(JObj) ->
 -spec get_profile_param(tuple(), kz_term:proplist()) -> kz_term:proplist().
 get_profile_param({Key, Val}, Acc) ->
     case lists:keyfind(Key, 1, ?CALLER_PROFILE_VARS) of
-        'false' -> [{Key, Val} | Acc];
+        'false' -> [{Key, ecallmgr_util:maybe_sanitize_fs_value(Key, Val)} | Acc];
         {_Key, Prefix} -> [{Prefix, ecallmgr_util:maybe_sanitize_fs_value(Key, Val)} | Acc]
     end.
 
@@ -943,9 +940,8 @@ get_profile_param({Key, Val}, Acc) ->
 get_profile_vars_fold(K, V, Acc) ->
     case lists:keyfind(K, 1, ?CALLER_PROFILE_VARS) of
         'false' ->
-            [list_to_binary([kz_term:to_list(K)
-                            ,"='", kz_term:to_list(V), "'"])
-            | Acc];
+            Val = ecallmgr_util:maybe_sanitize_fs_value(K, V),
+            [encode_fs_val(K, Val) | Acc];
         {_, Prefix} ->
             Val = ecallmgr_util:maybe_sanitize_fs_value(K, V),
             [encode_fs_val(Prefix, Val) | Acc]
