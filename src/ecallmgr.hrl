@@ -274,6 +274,7 @@
                               ,{<<"Enable-T38-Fax">>, <<"fax_enable_t38">>}
                               ,{<<"Enable-T38-Fax-Request">>, <<"fax_enable_t38_request">>}
                               ,{<<"Enable-T38-Passthrough">>, <<"t38_passthru">>}
+                              ,{<<"Enable-T38-Gateway">>, <<"execute_on_answer_fax_t38_gateway">>}
                               ,{<<"Endpoint-Delay">>, <<"leg_delay_start">>}
                               ,{<<"Endpoint-Progress-Timeout">>, <<"leg_progress_timeout">>}
                               ,{<<"Endpoint-Timeout">>, <<"leg_timeout">>}
@@ -397,6 +398,12 @@
                               ,{<<"Application-UUID-Name">>, <<"app_uuid_name">>}
                               ,{<<"RTP-Disable-Hold">>, <<"rtp_disable_hold">>}
                               ]).
+
+%% Call and Channel Vars that have a special transform value instead of the
+%% standard binary value
+-define(SPECIAL_CHANNEL_TRANSFORMS, [{<<"Confirm-File">>, media}
+                                    ,{<<"Enable-T38-Gateway">>, {prepend, <<"t38_gateway">>}}
+                                    ]).
 
 -define(CALLER_PROFILE_VARS, [{<<"Caller-ID-Name">>, <<"caller_id_name">>}
                              ,{<<"Caller-ID-Number">>, <<"caller_id_number">>}
