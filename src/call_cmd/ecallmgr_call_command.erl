@@ -1159,7 +1159,6 @@ record_call(_Node, _UUID, <<"resume">>, JObj) ->
     {<<"record_session_resume">>, RecordingName};
 record_call(Node, UUID, <<"start">>, JObj) ->
     ScopeVariables = record_scoped_vars(Node, UUID, JObj),
-    Variables = record_call_vars(Node, UUID, JObj),
     TimeLimit = record_call_limit(JObj),
 
     MediaName = kz_json:get_ne_binary_value(<<"Media-Name">>, JObj),
@@ -1178,7 +1177,6 @@ record_call(Node, UUID, <<"start">>, JObj) ->
 
     [{<<"unshift">>, <<"Media-Recordings=", RecordingId/binary>>}
     ,{<<"unshift">>, <<"Media-Recordings-Name=", RecordingName/binary>>}
-    ,{<<"kz_multiset_encoded">>, Variables}
     ,{<<"record_session">>, list_to_binary(RecordArgs)}
     ];
 record_call(_Node, _UUID, <<"stop">>, JObj) ->
@@ -1212,19 +1210,15 @@ record_scoped_vars(Node, UUID, JObj) ->
                        ,{<<"enable_file_write_buffering">>, <<"false">>}
                        ,{<<"record_min_sec">>, RecordMinSec}
                        ,{<<"record_sample_rate">>, kz_term:to_binary(SampleRate)}
+                       ,{<<"Recording-Follow-Transfer">>, record_follow_transfer(JObj)}
                        ]
                       ,Routines
                       ),
     scope_variables(Node, UUID, Vars).
 
--spec record_call_vars(atom(), kz_term:ne_binary(), kz_json:object()) -> binary().
-record_call_vars(Node, UUID, JObj) ->
-    FollowTransfer = kz_json:get_binary_boolean(<<"Follow-Transfer">>, JObj, <<"true">>),
-    Vars = [{<<"recording_follow_transfer">>, FollowTransfer}
-           ,{<<"recording_follow_attxfer">>, FollowTransfer}
-           ],
-    Args = ecallmgr_util:process_fs_kv(Node, UUID, Vars, 'set'),
-    ecallmgr_util:fs_args_to_binary(Args).
+-spec record_follow_transfer(kz_json:object()) -> boolean().
+record_follow_transfer(JObj) ->
+    kz_json:is_true(<<"Follow-Transfer">>, JObj, false).
 
 -spec record_call_args(kz_json:object()) -> binary().
 record_call_args(JObj) ->
