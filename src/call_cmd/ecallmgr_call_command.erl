@@ -1426,7 +1426,7 @@ set_page_timeout(Dialplan, JObj) ->
 -spec set_page_endpoints(kz_term:proplist(), node(), kz_term:ne_binary(), kz_json:object(), kz_json:objects()) -> kz_term:proplist().
 set_page_endpoints(Dialplan, Node, UUID, JObj, Endpoints) ->
     InteractionId = kz_json:get_value([<<"Custom-Channel-Vars">>, <<?CALL_INTERACTION_ID>>], JObj, <<"${Call-Interaction-ID}">>),
-    AutoAnswer = page_auto_answer_params(UUID, JObj),
+    AutoAnswer = page_auto_answer_params(Node, UUID, JObj),
     Values = [{[<<"Custom-Channel-Vars">>, <<"Auto-Answer">>], 'true'}
              ,{[<<"Custom-Channel-Vars">>, <<"Ecallmgr-Node">>], kz_term:to_binary(Node)}
              ,{<<"Call-Flag-NO-Flip">>, 'true'}
@@ -1440,15 +1440,15 @@ set_page_endpoints(Dialplan, Node, UUID, JObj, Endpoints) ->
     | Dialplan
     ].
 
--spec page_auto_answer_params(kz_term:ne_binary(), kz_json:object()) -> binary().
-page_auto_answer_params(UUID, JObj) ->
+-spec page_auto_answer_params(node(), kz_term:ne_binary(), kz_json:object()) -> binary().
+page_auto_answer_params(Node, UUID, JObj) ->
     DefaultCCV = kz_json:from_list([{<<"Auto-Answer-Suppress-Notify">>, 'true'}]),
     CCVs = kz_json:to_proplist(kz_json:get_json_value(<<"Custom-Channel-Vars">>, JObj, DefaultCCV)),
     AutoAnswerParams = [{<<"SIP-Invite-Parameters">>, <<"intercom=true">>}
                        ,{<<"Alert-Info">>, <<"intercom">>}
                        ],
     Vars = props:set_values(AutoAnswerParams, CCVs),
-    Args = ecallmgr_util:multi_set_args(UUID, Vars, <<";">>),
+    Args = ecallmgr_util:multi_set_args(Node, UUID, Vars, <<";">>),
     list_to_binary(["{", Args, "}"]).
 
 -spec add_page_conference_app(kz_term:proplist(), kz_term:ne_binary()) -> kz_term:proplist().
