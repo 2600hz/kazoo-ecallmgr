@@ -202,7 +202,7 @@ init_control(Pid, #{node := Node
                           ,is_node_up='true'
                           ,is_call_up='true'
                           },
-            call_control_ready(State),
+            call_control_ready(State, Payload),
             gen_server:enter_loop(?MODULE, [], State);
         _Other -> lager:debug("callback doesn't want to proceed")
     catch
@@ -218,7 +218,7 @@ init_control(Pid, #{node := Node
                    ,control_q := ControlQ
                    ,initial_ccvs := CCVs
                    ,channel := Channel
-                   }) ->
+                   }=Payload) ->
     proc_lib:init_ack(Pid, {'ok', self()}),
     kz_amqp_channel:consumer_channel(Channel),
     bind(Node, CallId),
@@ -235,7 +235,7 @@ init_control(Pid, #{node := Node
                   ,is_node_up='true'
                   ,is_call_up='true'
                   },
-    call_control_ready(State),
+    call_control_ready(State, Payload),
     gen_server:enter_loop(?MODULE, [], State).
 
 %%------------------------------------------------------------------------------
@@ -415,9 +415,11 @@ code_change(_OldVsn, State, _Extra) ->
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
--spec call_control_ready(state()) -> 'ok'.
-call_control_ready(#state{controller_q='undefined'}) -> 'ok';
-call_control_ready(State) ->
+-spec call_control_ready(state(), map()) -> 'ok'.
+call_control_ready(#state{controller_q='undefined'}, _Payload) -> 'ok';
+call_control_ready(_State, #{suppress_usurp:='true'}) ->
+    lager:debug("suppressing usurp");
+call_control_ready(State, _Payload) ->
     publish_route_win(State),
     publish_usurp(State).
 

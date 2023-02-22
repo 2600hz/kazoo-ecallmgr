@@ -621,6 +621,7 @@ start_control_process(#state{originate_req=JObj
            ,fetch_id => OriginateUUID
            ,controller_q => ControllerQ
            ,initial_ccvs => kz_json:new()
+           ,suppress_usurp => 'true'
            },
     case ecallmgr_call_control_manager:start_call_control(Ctx) of
         {'ok', CtrlPid} when is_pid(CtrlPid) ->
