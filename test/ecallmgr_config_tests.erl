@@ -20,7 +20,8 @@ render_test_() ->
     ,fun kz_fixturedb_util:start_me/0
     ,fun kz_fixturedb_util:stop_me/1
     ,fun(_ReturnOfSetup) ->
-             [{"HELP-44944: no filtering of callfwd endpoints", no_filter_when_callfwd()}
+             [
+              {"HELP-44944: no filtering of callfwd endpoints", no_filter_when_call_failover()}
              ,{"HELP-44944: filtering of unregistered SIP endpoints", filter_when_unreged()}
              ,{"HELP-44944: filtering of unregistered SIP endpoints with dedup", filter_when_unreged_dedup()}
              ,{"HELP-10722: filtering endpoints", filter_endpoints_10722()}
@@ -28,19 +29,24 @@ render_test_() ->
      end
     }.
 
-no_filter_when_callfwd() ->
+%% @doc if a device is unregistered but has a failover route, it
+%% should have the failover channel built
+no_filter_when_call_failover() ->
     AccountId = <<"account0000000000000000000044944">>,
     UserId = <<"user0000000000000000000000000004">>,
 
+    %% device-4 should be "registered" while device-5 is not but has failover
     Needles = [_DeviceId = <<"Authorizing-ID='device00000000000000000000000004'">>
               ,_CallFwdDeviceId = <<"Authorizing-ID='device00000000000000000000000005'">>
               ,_CallFwdDestination = <<"loopback/+12223334455">>
               ],
 
+    %% should be device-4, device-5 (with failover)
     Endpoints = kz_endpoints:by_owner_id(UserId, kz_json:new(), new_call(AccountId)),
-    Channels = build_channels(Endpoints),
 
-    %% SIP device4 and call-fwd device5
+    %% should be device-4 and device-5-failover
+    Channels = build_channels(Endpoints, 'false'),
+
     [?_assertEqual(2, length(Channels))
     | find_needles(Needles, Channels)
     ].
@@ -81,30 +87,39 @@ filter_endpoints_10722() ->
                    ,_Device4Id = <<"Authorizing-ID='e192d667e3abd732d802353b70c26248'">>
                    ],
 
-    [Endpoint | EPs] = kz_endpoints:by_owner_id(UserId, kz_json:new(), new_call(AccountId)),
+    %% all four endpoints are "registered" so no need for failover
+    %% channels
+    Endpoints = [Endpoint | _EPs] = kz_endpoints:by_owner_id(UserId, kz_json:new(), new_call(AccountId)),
+    Channels = build_channels(Endpoints),
+
+    %% because the only endpoint is unregistered, and the user has
+    %% failover configured, build the failover route
+    UnregedNeedles = [_IsFowarding = <<"Call-Forward='true'">>
+                     ,_DeviceId = <<"Authorizing-ID='14b279cdaef7d55cff7235ba2a5010e9'">>
+                     ,_ForwardingTo = <<"loopback/+18887776666">>
+                     ],
     UnregedEndpoint = kz_json:set_values([{<<"To-User">>, <<"unregistered">>}
                                          ,{<<"To-Username">>, <<"unregistered">>}
                                          ]
                                         ,Endpoint
                                         ),
+    FailoverChannels = build_channels([UnregedEndpoint]),
 
-    Endpoints = [Endpoint | EPs],
-    Channels = build_channels(Endpoints),
-
-    UnregedEndpoints = [UnregedEndpoint],
-    FailoverChannels = build_channels(UnregedEndpoints),
-
-    [?_assertEqual(0, length(FailoverChannels))
+    [?_assertEqual(1, length(FailoverChannels))
     ,?_assertEqual(4, length(Channels))
     | find_needles(RegedNeedles, Channels)
+     ++ find_needles(UnregedNeedles, FailoverChannels)
     ].
 
 find_needles(Needles, Channels) ->
     [?_assert(found(Needle, Channels)) || Needle <- Needles].
 
 build_channels(Endpoints) ->
+    build_channels(Endpoints, 'true').
+
+build_channels(Endpoints, FilterWhenAllUnreged) ->
     BridgeEndpoints = ecallmgr_util:endpoint_jobjs_to_records(Endpoints),
-    Filtered = ecallmgr_util:maybe_filter_failover_channels(BridgeEndpoints, 'true'),
+    Filtered = ecallmgr_util:maybe_filter_failover_channels(BridgeEndpoints, FilterWhenAllUnreged),
     ecallmgr_util:build_bridge_channels(Filtered, []).
 
 new_call(AccountId) ->

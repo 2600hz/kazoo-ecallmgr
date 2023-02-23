@@ -705,19 +705,19 @@ maybe_sanitize_fs_value(Key, Val) when not is_binary(Val) ->
     maybe_sanitize_fs_value(Key, kz_term:to_binary(Val));
 maybe_sanitize_fs_value(Key, Val) ->
     case get_fs_transform_value(Key) of
-        undefined -> Val;
+        'undefined' -> Val;
         Transform -> transform_fs_value(Transform, Val)
     end.
 
-transform_fs_value({prepend, Prepend}, Val) ->
+transform_fs_value({'prepend', Prepend}, Val) ->
     list_to_binary([Prepend, " ", Val]);
-transform_fs_value(media, Val) ->
+transform_fs_value('media', Val) ->
     media_path(Val, 'extant', get('callid'), kz_json:new()).
 
 get_fs_transform_value(Key) ->
     case lists:keyfind(Key, 1, ?SPECIAL_CHANNEL_TRANSFORMS) of
         {_, Transform} -> Transform;
-        _Else -> undefined
+        _Else -> 'undefined'
     end.
 
 %%------------------------------------------------------------------------------
@@ -768,30 +768,31 @@ classify_endpoints(Endpoints) ->
 -spec classify_endpoint(bridge_endpoint(), {bridge_endpoints(), bridge_endpoints()}) -> {bridge_endpoints(), bridge_endpoints()}.
 classify_endpoint(#bridge_endpoint{channel_vars=CVs
                                   ,failover=EndpointFailover
+                                  ,endpoint_id=_EPID
                                   }=Endpoint
                  ,{Devices, Failovers}
                  ) ->
-    IsFailoverEndpoint = lists:member(<<?CHANNEL_VAR_PREFIX, "Is-Failover='true'">>, CVs),
+    IsFailoverEndpoint = lists:member(<<?CHANNEL_VAR_PREFIX, "Call-Forward='true'">>, CVs),
     IsRegistered = is_registered(Endpoint),
 
     case IsFailoverEndpoint of
         'true' ->
-            lager:info("endpoint is a failover endpoint"),
-            {Devices, maybe_use_fwd_endpoint(Endpoint, Failovers)};
+            lager:info("endpoint ~s is a failover endpoint", [_EPID]),
+            {Devices, maybe_use_failover_endpoint(Endpoint, Failovers)};
         'false' when IsRegistered ->
-            lager:info("endpoint is an endpoint"),
+            lager:info("endpoint ~s is a regular endpoint", [_EPID]),
             {[Endpoint | Devices], Failovers};
         'false' when EndpointFailover =:= 'undefined' ->
-            lager:info("endpoint is not failover nor registered, removing"),
+            lager:info("endpoint ~s is not failover nor registered, removing", [_EPID]),
             {Devices, Failovers};
         'false' ->
-            lager:info("endpoint is not registered but has failover route defined"),
+            lager:info("endpoint ~s is not registered but has failover route defined", [_EPID]),
             maybe_add_failover_route(EndpointFailover, {Devices, Failovers})
     end.
 
 maybe_add_failover_route(EndpointFailover, {Devices, Failovers}) ->
     Endpoint = endpoint_jobj_to_record(EndpointFailover),
-    {Devices, maybe_use_fwd_endpoint(Endpoint, Failovers)}.
+    {Devices, maybe_use_failover_endpoint(Endpoint, Failovers)}.
 
 -spec is_registered(bridge_endpoint()) -> boolean().
 is_registered(Endpoint) ->
@@ -802,18 +803,23 @@ is_registered(Endpoint) ->
         'error':{'badmatch',{'error', 'not_found'}} -> 'false'
     end.
 
--spec maybe_use_fwd_endpoint(bridge_endpoint(), bridge_endpoints()) -> bridge_endpoints().
-maybe_use_fwd_endpoint(#bridge_endpoint{invite_format = <<"loopback">>
-                                       ,route=ForwardDestination
-                                       }=Endpoint
-                      ,Failovers
-                      ) ->
-    case lists:keyfind(ForwardDestination, #bridge_endpoint.route, Failovers) of
+-spec maybe_use_failover_endpoint(bridge_endpoint(), bridge_endpoints()) -> bridge_endpoints().
+maybe_use_failover_endpoint(#bridge_endpoint{invite_format = <<"loopback">>
+                                            ,route=FailoverDestination
+                                            ,endpoint_id=_EPID
+                                            }=Endpoint
+                           ,Failovers
+                           ) ->
+    case lists:keyfind(FailoverDestination, #bridge_endpoint.route, Failovers) of
         'false' ->
-            lager:info("adding failover endpoint (to ~s)", [ForwardDestination]),
-            [Endpoint| Failovers];
+            lager:info("adding failover endpoint ~s (to ~s)"
+                      ,[_EPID, FailoverDestination]
+                      ),
+            [Endpoint | Failovers];
         _EP ->
-            lager:info("skipping endpoint with existing destination ~s", [ForwardDestination]),
+            lager:info("skipping endpoint ~s with existing destination ~s"
+                      ,[_EPID, FailoverDestination]
+                      ),
             Failovers
     end.
 
@@ -865,6 +871,7 @@ endpoint_jobj_to_record(Endpoint) ->
 -spec endpoint_jobj_to_record(kz_json:object(), boolean()) -> bridge_endpoint().
 endpoint_jobj_to_record(Endpoint, IncludeVars) ->
     ToUser = kz_json:get_ne_value(<<"To-User">>, Endpoint),
+
     Bridge = #bridge_endpoint{invite_format = kz_json:get_ne_value(<<"Invite-Format">>, Endpoint, <<"username">>)
                              ,endpoint_type = kz_json:get_ne_value(<<"Endpoint-Type">>, Endpoint, <<"sip">>)
                              ,ip_address = kz_json:get_ne_value(<<"To-IP">>, Endpoint)
@@ -881,12 +888,20 @@ endpoint_jobj_to_record(Endpoint, IncludeVars) ->
                              ,interface = get_endpoint_interface(Endpoint)
                              ,sip_interface = kz_json:get_ne_value(<<"SIP-Interface">>, Endpoint)
                              ,include_channel_vars = IncludeVars
-                             ,failover = kz_json:get_json_value(<<"Failover">>, Endpoint)
+                             ,failover = get_endpoint_failover(Endpoint)
                              ,account_id = kz_json:get_value(<<"Account-ID">>, Endpoint)
                              ,endpoint_id = kz_json:get_value(<<"Endpoint-ID">>, Endpoint)
                              ,endpoint_uri = kz_json:get_value(<<"Endpoint-URI">>, Endpoint)
                              },
     endpoint_jobj_to_record_vars(Endpoint, Bridge).
+
+get_endpoint_failover(Endpoint) ->
+    case kz_json:get_json_value(<<"Failover">>, Endpoint) of
+        'undefined' -> 'undefined';
+        Failover ->
+            EndpointId = kz_json:get_value(<<"Endpoint-ID">>, Endpoint),
+            kz_json:set_value(<<"Endpoint-ID">>, EndpointId, Failover)
+    end.
 
 -spec endpoint_jobj_to_record_vars(kz_json:object(), bridge_endpoint()) -> bridge_endpoint().
 endpoint_jobj_to_record_vars(Endpoint, #bridge_endpoint{include_channel_vars='true'}=Bridge) ->
@@ -936,9 +951,10 @@ maybe_filter_failover_channels(Channels, 'false') -> Channels;
 maybe_filter_failover_channels(Channels, 'true') ->
     lager:info("ecallmgr 'failover_when_all_unreg' is enabled."),
 
-    %% NOTE: because we want to de-dup failover endpoints with the same destination
-    %% it is important to pass bridge strings in intial order to {@link failover_if_all_unregistered/1}
-    %% function so only the first duplicated endpoint will ne used.
+    %% NOTE: because we want to de-dup failover endpoints with the
+    %% same destination it is important to pass bridge strings in
+    %% initial order to {@link failover_if_all_unregistered/1}
+    %% function so only the first duplicated endpoint will be used.
     failover_if_all_unregistered(lists:reverse(Channels)).
 
 -spec build_bridge_channels(bridge_endpoints(), build_returns()) -> bridge_channels().
@@ -1060,7 +1076,7 @@ build_sip_channel(#bridge_endpoint{failover=Failover}=Endpoint) ->
         _E:_R:ST ->
             lager:warning("failed to build sip channel (~s): ~p", [_E, _R]),
             kz_log:log_stacktrace(ST),
-            {'error', 'invalid'}
+            maybe_failover(Failover)
     end.
 
 -type build_channel_fun_1() :: fun((bridge_endpoint()) -> bridge_channel() | {bridge_channel(), bridge_endpoint()}).
