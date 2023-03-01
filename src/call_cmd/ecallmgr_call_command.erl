@@ -1163,7 +1163,7 @@ record_call(UUID, <<"start">>, JObj) ->
 
     MediaName = kz_json:get_ne_binary_value(<<"Media-Name">>, JObj),
     RecordingName = ecallmgr_util:recording_filename(MediaName),
-    RecordingId = kz_json:get_ne_binary_value(<<"Media-Recording-ID">>, JObj),
+    RecordingId = kz_json:get_ne_binary_value(<<"Media-Recording-ID">>, JObj, MediaName),
 
     RecordArgs = [ScopeVariables
                  ,"^^", ?RECORD_CALL_PARAM_SEPARATOR

@@ -23,6 +23,7 @@
 -define(CHILDREN, [?SUPER('ecallmgr_call_control_sup')
                   ,?SUPER('ecallmgr_call_control_listener_sup')
                   ,?WORKER('ecallmgr_call_control_manager')
+                  ,?WORKER('ecallmgr_wiretap_listener')
                   ]).
 
 %%==============================================================================
