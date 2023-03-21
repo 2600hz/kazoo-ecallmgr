@@ -1218,7 +1218,7 @@ record_scoped_vars(UUID, JObj) ->
 
 -spec record_follow_transfer(kz_json:object()) -> boolean().
 record_follow_transfer(JObj) ->
-    kz_json:is_true(<<"Follow-Transfer">>, JObj, false).
+    kz_json:is_true(<<"Follow-Transfer">>, JObj, 'false').
 
 -spec record_call_args(kz_json:object()) -> binary().
 record_call_args(JObj) ->
