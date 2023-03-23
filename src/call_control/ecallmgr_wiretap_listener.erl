@@ -67,7 +67,7 @@ handle_record_call(JObj, _Props) ->
     kz_log:put_callid(JObj),
     maybe_execute_command(JObj, kapi_dialplan:record_call_v(JObj)).
 
-maybe_execute_command(JObj, 'false') -> 'ok';
+maybe_execute_command(_JObj, 'false') -> 'ok';
 maybe_execute_command(JObj, 'true') ->
     CallId = kz_api:call_id(JObj),
     case ecallmgr_fs_channel:node(CallId) of
