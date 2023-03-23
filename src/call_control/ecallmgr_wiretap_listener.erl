@@ -65,7 +65,10 @@ start_link() ->
 -spec handle_record_call(kz_json:object(), kz_term:prolists()) -> 'ok'.
 handle_record_call(JObj, _Props) ->
     kz_log:put_callid(JObj),
-    'true' = kapi_dialplan:record_call_v(JObj),
+    maybe_execute_command(JObj, kapi_dialplan:record_call_v(JObj)).
+
+maybe_execute_command(JObj, 'false') -> 'ok';
+maybe_execute_command(JObj, 'true') ->
     CallId = kz_api:call_id(JObj),
     case ecallmgr_fs_channel:node(CallId) of
         {'ok', Node} ->
