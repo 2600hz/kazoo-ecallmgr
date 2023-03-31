@@ -765,6 +765,9 @@ kazoo_var_to_fs_var({<<"Call-Context">>, JObj}, Vars) ->
 kazoo_var_to_fs_var({<<"SIP-Diversions">>, V}, Vars) ->
     [encode_fs_val("sip_h_Diversion",  encode_sip_diversions(V)) | Vars];
 
+kazoo_var_to_fs_var({<<"SIP-Multipart">>, JObj}, Vars) ->
+    kz_json:foldl(fun encode_sip_multipart_fold/3, Vars, JObj);
+
 kazoo_var_to_fs_var({AMQPHeader, V}, Vars) ->
     case lists:keyfind(AMQPHeader, 1, ?SPECIAL_CHANNEL_VARS) of
         'false' -> Vars;
@@ -812,8 +815,6 @@ participant_flag_to_var(Flag) -> Flag.
 -spec sip_headers_fold(kz_json:path(), kz_json:json_term(), iolist()) -> iolist().
 sip_headers_fold(<<"Diversions">>, Vs, Vars) ->
     diversion_headers_fold(Vs, Vars);
-sip_headers_fold(<<"SIP-Multipart">>, JObj, Vars) ->
-    kz_json:foldl(fun multipart_to_fs_val_fold/3, Vars, JObj);
 sip_headers_fold(K, V, Vars) ->
     Prefix = ["sip_h_", K],
     Val = maybe_expand_macro(kz_term:to_binary(V)),
@@ -840,11 +841,6 @@ diversion_headers_fold(Vs, Vars0) ->
 diversion_header_fold(<<_/binary>> = V, Vars0) ->
     lager:debug("setting diversion ~s on the channel", [V]),
     [encode_fs_val("sip_h_Diversion", V) | Vars0].
-
--spec multipart_to_fs_val_fold(kz_json:key(), kz_json:json_term(), iolist()) -> iolist().
-multipart_to_fs_val_fold(Key, Value, Vars) ->
-    lager:debug("setting multipart ~s on the channel", [Key]),
-    [encode_fs_val(<<"sip_multipart_", Key/binary>>, Value) | Vars].
 
 -spec kazoo_var_to_fs_var_fold(kz_json:path(), kz_json:json_term(), iolist()) -> iolist().
 kazoo_var_to_fs_var_fold(<<"Force-Fax">>, Direction, Acc) ->
@@ -2002,3 +1998,8 @@ encode_sip_diversions(Diversions) ->
         true -> list_to_binary([<<"ARRAY::">>, kz_binary:join(Diversions, <<"|:">>)]);
         false -> kz_binary:join(Diversions, <<",">>)
     end.
+
+-spec encode_sip_multipart_fold(kz_json:key(), kz_json:json_term(), iolist()) -> iolist().
+encode_sip_multipart_fold(Key, Value, Vars) ->
+    lager:debug("setting multipart ~s on the channel", [Key]),
+    [encode_fs_val(<<"sip_multipart_", Key/binary>>, Value) | Vars].
