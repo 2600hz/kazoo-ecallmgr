@@ -765,8 +765,8 @@ kazoo_var_to_fs_var({<<"Call-Context">>, JObj}, Vars) ->
 kazoo_var_to_fs_var({<<"SIP-Diversions">>, V}, Vars) ->
     [encode_fs_val("sip_h_Diversion",  encode_sip_diversions(V)) | Vars];
 
-kazoo_var_to_fs_var({<<"SIP-Multipart">>, JObj}, Vars) ->
-    kz_json:foldl(fun encode_sip_multipart_fold/3, Vars, JObj);
+kazoo_var_to_fs_var({<<"SIP-Multiparts">>, JObj}, Vars) ->
+    kz_json:foldl(fun encode_sip_multiparts_fold/3, Vars, JObj);
 
 kazoo_var_to_fs_var({AMQPHeader, V}, Vars) ->
     case lists:keyfind(AMQPHeader, 1, ?SPECIAL_CHANNEL_VARS) of
@@ -1999,7 +1999,7 @@ encode_sip_diversions(Diversions) ->
         false -> kz_binary:join(Diversions, <<",">>)
     end.
 
--spec encode_sip_multipart_fold(kz_json:key(), kz_json:json_term(), iolist()) -> iolist().
-encode_sip_multipart_fold(Key, Value, Vars) ->
+-spec encode_sip_multiparts_fold(kz_json:key(), kz_json:json_term(), iolist()) -> iolist().
+encode_sip_multiparts_fold(Key, Value, Vars) ->
     lager:debug("setting multipart ~s on the channel", [Key]),
     [encode_fs_val(<<"sip_multipart_", Key/binary>>, Value) | Vars].
