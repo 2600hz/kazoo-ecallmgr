@@ -1004,7 +1004,7 @@ play_app(UUID, JObj) ->
     F = ecallmgr_util:media_path(MediaName, 'new', UUID, JObj),
     %% if Leg is set, use uuid_broadcast; otherwise use playback
     case ecallmgr_fs_channel:is_bridged(UUID) of
-        'true' -> play_bridged(JObj, F);
+        'true' -> play_bridged(UUID, JObj, F);
         'false' ->
             play_app(F
                     ,kz_json:is_true(<<"Endless-Playback">>, JObj, 'false')
@@ -1019,16 +1019,18 @@ play_app(MediaPath, 'false', LoopCount) when is_integer(LoopCount), LoopCount > 
 play_app(MediaPath, _Endless, _Loop) ->
     {<<"playback">>, MediaPath}.
 
--spec play_bridged(kz_json:object(), kz_term:ne_binary()) -> fs_app().
-play_bridged(JObj, F) ->
-    case kz_json:get_ne_binary_value(<<"Leg">>, JObj) of
-        <<"self">> ->  {<<"broadcast">>, list_to_binary(["'", F, <<"' aleg">>])};
-        <<"A">> ->     {<<"broadcast">>, list_to_binary(["'", F, <<"' aleg">>])};
-        <<"peer">> ->  {<<"broadcast">>, list_to_binary(["'", F, <<"' bleg">>])};
-        <<"B">> ->     {<<"broadcast">>, list_to_binary(["'", F, <<"' bleg">>])};
-        <<"Both">> ->  {<<"broadcast">>, list_to_binary(["'", F, <<"' both">>])};
-        'undefined' -> {<<"broadcast">>, list_to_binary(["'", F, <<"' both">>])}
-    end.
+-spec play_bridged(kz_term:ne_binary(), kz_json:object(), kz_term:ne_binary()) -> fs_app().
+play_bridged(UUID, JObj, F) ->
+    {<<"broadcast">>, list_to_binary([UUID, " '", F, <<"' ">>, leg_option(JObj)])}.
+
+leg_option(<<"self">>) -> <<"aleg">>;
+leg_option(<<"A">>) ->    <<"aleg">>;
+leg_option(<<"peer">>) -> <<"bleg">>;
+leg_option(<<"B">>) ->    <<"bleg">>;
+leg_option(<<"Both">>) -> <<"both">>;
+leg_option('undefined') -> <<"both">>;
+leg_option(JObj) ->
+    leg_option(kz_json:get_ne_binary_value(<<"Leg">>, JObj)).
 
 -spec play_vars(kz_term:ne_binary(), kz_json:object()) -> fs_app().
 play_vars(UUID, JObj) ->
