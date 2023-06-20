@@ -37,6 +37,7 @@
 	<!--<event name="CALL_UPDATE" />-->
 	<event name="CHANNEL_HOLD" />
 	<event name="CHANNEL_UNHOLD" />
+	<event name="RECV_INFO" />
 	<event name="loopback::bowout" />
 	<event name="loopback::direct" />
 	<event name="HEARTBEAT" />

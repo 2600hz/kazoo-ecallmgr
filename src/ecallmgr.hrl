@@ -487,7 +487,7 @@
                    ,{'callflow', ['ROUTE_WINNER', 'CHANNEL_EXECUTE_COMPLETE', 'CHANNEL_APP_EXECUTE_COMPLETE', 'CHANNEL_METAFLOW']}
                    ,{'presence', ['PRESENCE_IN']}
                    ,{'channel_full_update', ['CHANNEL_DATA','CHANNEL_SYNC','CALL_UPDATE']}
-                   ,{'channel_update', ['CHANNEL_HOLD','CHANNEL_UNHOLD']}
+                   ,{'channel_update', ['CHANNEL_HOLD','CHANNEL_UNHOLD','RECV_INFO']}
                    ,{'conference', ['conference::maintenance']}
                    ,{'fax', ?FAX_EVENTS}
                    ,{'kazoo', ['kazoo::noop', 'kazoo::masquerade']}

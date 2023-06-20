@@ -1,0 +1,22 @@
+<event name="RECV_INFO">
+	<filters>
+		<filter type="include" compare="prefix" value="variable_sip_info_h_X-KZ-Publish-"/>
+	</filters>
+	<fields>
+		<field name="call_event" type="reference" />
+		<field name="variable_conference_name" as="Conference-ID" />
+		<field name="Custom-SIP-Info-Headers" type="static" serialize-as="object">
+			<fields>
+				<field name="variable_sip_info_h_" type="prefix" exclude-prefix="true">
+					<prefix-exception value="variable_sip_info_h_X-AUTH"/>
+					<prefix-exception value="variable_sip_info_h_X-Proxy-Core"/>
+					<prefix-exception value="variable_sip_info_h_X-FS-"/>
+					<prefix-exception value="variable_sip_info_h_Referred-By"/>
+					<prefix-exception value="variable_sip_info_h_Refer-To"/>
+					<prefix-exception value="variable_sip_info_h_Diversion"/>
+				</field>
+			</fields>
+		</field>
+		<field name="variable_bridge_export_vars" as="Exported-Bridge-Variables" />
+	</fields>
+</event>

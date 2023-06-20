@@ -101,6 +101,7 @@ node_bindings() ->
                           ,'ecallmgr_presence_event_publisher'
                           ,'ecallmgr_fs_recordings'
                           ,'ecallmgr_cdr_event_publisher'
+                          ,'ecallmgr_sip_header_broadcast'
                           ]).
 
 -spec event_stream_bind() -> 'ok'.
