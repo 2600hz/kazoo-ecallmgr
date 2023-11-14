@@ -173,7 +173,8 @@ send_cmd(Node, UUID, App, "playseek", Cmd) ->
 send_cmd(Node, UUID, App, "unbridge", _) ->
     lager:debug("execute on node ~s: ~s uuid_park(~s)", [Node, App, UUID]),
     freeswitch:api(Node, 'uuid_park', UUID);
-send_cmd(Node, _UUID, App, "broadcast", Args) ->
+send_cmd(Node, UUID, App, "broadcast", BroadcastArgs) ->
+    Args = iolist_to_binary([UUID, " ", BroadcastArgs]),
     lager:debug("execute on node ~s: ~s uuid_broadcast(~s)", [Node, App, Args]),
     Resp = freeswitch:api(Node, 'uuid_broadcast', iolist_to_binary(Args)),
     lager:debug("broadcast resulted in: ~p", [Resp]),
@@ -699,6 +700,8 @@ maybe_sanitize_fs_value(<<"Failover-Reasons">>, <<Val/binary>>) ->
     Val;
 maybe_sanitize_fs_value(<<"Failover-Reasons">>, Val) when is_list(Val) ->
     kz_binary:join(Val, <<",">>);
+maybe_sanitize_fs_value(_Key, [First | _] = Val) when is_binary(First) ->
+    kz_binary:join(Val, <<",">>);
 maybe_sanitize_fs_value(Key, Val) when not is_binary(Key) ->
     maybe_sanitize_fs_value(kz_term:to_binary(Key), Val);
 maybe_sanitize_fs_value(Key, Val) when not is_binary(Val) ->
@@ -1157,10 +1160,16 @@ get_sip_contact(#bridge_endpoint{ip_address='undefined'
                                 ,channel_vars=CVs
                                 }=EP) ->
     {'ok', Contact, Props} = ecallmgr_registrar:lookup_contact(Realm, Username),
-    Vars = ecallmgr_fs_xml:build_leg_vars(Props),
+    Vars = ecallmgr_fs_xml:build_leg_vars(contact_vars(Props)),
     NewEP = EP#bridge_endpoint{channel_vars=Vars ++ CVs},
     {binary:replace(Contact, <<">">>, <<>>), NewEP};
 get_sip_contact(#bridge_endpoint{ip_address=IPAddress}) -> IPAddress.
+
+contact_vars(Props) ->
+    lists:map(fun contact_var/1, Props).
+
+contact_var({<<"Proxy-Path">>, V}) -> {<<"Proxy-URI">>, V};
+contact_var(KV) -> KV.
 -endif.
 
 -spec maybe_clean_contact(kz_term:ne_binary(), bridge_endpoint()) -> kz_term:ne_binary().

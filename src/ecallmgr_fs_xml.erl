@@ -303,12 +303,14 @@ route_resp_xml(<<"bridge">>, Routes, JObj, DialplanContext) ->
 
     %% format the Route based on protocol
     {_Idx, Extensions} = lists:foldr(fun route_resp_fold/2, {1, []}, Routes),
+
     FailRespondEl = action_el(<<"respond">>, <<"${bridge_hangup_cause}">>),
     FailConditionEl = condition_el(FailRespondEl),
     FailExtEl = extension_el(<<"failed_bridge">>, <<"false">>, [FailConditionEl]),
 
     Context = context(JObj, DialplanContext),
-    ContextEl = context_el(Context, Actions ++ [unset_custom_sip_headers()] ++ Extensions ++ [FailExtEl]),
+    ContextContent = Actions ++ maybe_unset_custom_sip_headers() ++ Extensions ++ [FailExtEl],
+    ContextEl = context_el(Context, ContextContent),
     SectionEl = section_el(<<"dialplan">>, <<"Route Bridge Response">>, ContextEl),
     {'ok', xmerl:export([SectionEl], 'fs_xml')};
 
@@ -415,19 +417,27 @@ route_resp_set_originating_proxy(#{payload := Payload}) ->
         Proxy -> action_el(<<"set">>, list_to_binary([<<"originating_proxy=">>, Proxy]))
     end.
 
--spec unset_custom_sip_headers() -> kz_types:xml_el().
+-spec unset_custom_sip_headers() -> kz_types:xml_el() | 'undefined'.
 unset_custom_sip_headers() ->
-    action_el(<<"kz_prefix_unset">>, unset_cshs()).
+    case unset_cshs() of
+        <<>> -> 'undefined';
+        CSHs -> action_el(<<"kz_prefix_unset">>, CSHs)
+    end.
+
+-spec maybe_unset_custom_sip_headers() -> kz_types:xml_els().
+maybe_unset_custom_sip_headers() ->
+    case unset_custom_sip_headers() of
+        'undefined' -> [];
+        Action -> [Action]
+    end.
 
 unset_cshs() ->
     kz_binary:join(lists:map(fun(CSH) -> <<"sip_h_", CSH/binary>> end, unset_csh_list()), <<"|">>).
 
 unset_csh_list() ->
-    [<<"X-AUTH">>
-    ,<<"X-FS-">>
-    ,<<"X-CONF-">>
-    ,<<"Referred-by">>
-    ].
+    kz_app_config:get_ne_binaries(?APP, <<"dialplan.route_resp.park.unset-cshs">>, default_unset_csh_list()).
+
+default_unset_csh_list() -> [].
 
 -spec route_resp_log_winning_node() -> kz_types:xml_el().
 route_resp_log_winning_node() ->
@@ -764,6 +774,9 @@ kazoo_var_to_fs_var({<<"Call-Context">>, JObj}, Vars) ->
 
 kazoo_var_to_fs_var({<<"SIP-Diversions">>, V}, Vars) ->
     [encode_fs_val("sip_h_Diversion",  encode_sip_diversions(V)) | Vars];
+
+kazoo_var_to_fs_var({<<"SIP-Multiparts">>, JObj}, Vars) ->
+    kz_json:foldl(fun encode_sip_multiparts_fold/3, Vars, JObj);
 
 kazoo_var_to_fs_var({AMQPHeader, V}, Vars) ->
     case lists:keyfind(AMQPHeader, 1, ?SPECIAL_CHANNEL_VARS) of
@@ -1446,12 +1459,12 @@ sofia_conf_xml(JObj) ->
 
     {'ok', xmerl:export([SectionEl], 'fs_xml')}.
 
-sofia_global_settings_el(undefined) ->
+sofia_global_settings_el('undefined') ->
     #xmlElement{name='global_settings'};
 sofia_global_settings_el(Settings) ->
     #xmlElement{name='global_settings', content=sofia_settings_el(Settings)}.
 
-sofia_profiles_el(undefined) ->
+sofia_profiles_el('undefined') ->
     #xmlElement{name='profiles'};
 sofia_profiles_el(JObj) ->
     Content = lists:foldl(sofia_profiles_fold_fun(JObj), [], kz_json:get_keys(JObj)),
@@ -1477,7 +1490,7 @@ sofia_profile_el(JObj) ->
 sofia_profile_fold_fun(JObj) ->
     fun({Key, Fun}, Acc) ->
             case kz_json:get_json_value(Key, JObj) of
-                undefined -> Acc;
+                'undefined' -> Acc;
                 Value -> [Fun(Value) | Acc]
             end
     end.
@@ -1495,7 +1508,7 @@ sofia_settings_el_fun(JObj) ->
     fun(Key, Xml) ->
             Name = kz_term:to_lower_binary(Key),
             case kz_json:get_value(Key, JObj) of
-                undefined -> Xml;
+                'undefined' -> Xml;
                 Values when is_list(Values) ->
                     lists:foldl(sofia_setting_el_fun(Name), Xml, Values);
                 Value ->
@@ -1890,8 +1903,12 @@ directory_resp_location_xml(Metas, JObj) ->
 
 directory_resp_location(Id, ProxyPath, Props) ->
     SIPInterface = ?DEFAULT_FS_PROFILE,
-    Vars = [list_to_binary([K, "=", V]) || {K, V} <- [{<<"sip_proxy_uri">>, ProxyPath} | get_channel_params(Props)]],
+    Params = get_channel_params(props:set_value(<<"Proxy-URI">>, ProxyPath, Props)),
+    Vars = directory_resp_location_vars(Params),
     list_to_binary(["[^^!", kz_binary:join(Vars, <<"!">>), "]", "sofia", "/", SIPInterface, "/", Id]).
+
+directory_resp_location_vars(Props) ->
+    [encode_fs_val(K, V) || {K, V} <-  Props].
 
 -spec prompt_el(kz_types:xml_attrib_value(), kz_types:xml_attrib_value()) -> kz_types:xml_el().
 prompt_el(Id, Value) ->
@@ -1988,6 +2005,11 @@ cav_el(Key, Value, Acc) ->
 -spec encode_sip_diversions(kz_term:ne_binaries()) -> kz_term:ne_binary().
 encode_sip_diversions(Diversions) ->
     case kz_app_config:is_true(?APP, <<"send_multiple_diversion_headers">>) of
-        true -> list_to_binary([<<"ARRAY::">>, kz_binary:join(Diversions, <<"|:">>)]);
-        false -> kz_binary:join(Diversions, <<",">>)
+        'true' -> list_to_binary([<<"ARRAY::">>, kz_binary:join(Diversions, <<"|:">>)]);
+        'false' -> kz_binary:join(Diversions, <<",">>)
     end.
+
+-spec encode_sip_multiparts_fold(kz_json:key(), kz_json:json_term(), iolist()) -> iolist().
+encode_sip_multiparts_fold(Key, Value, Vars) ->
+    lager:debug("setting multipart ~s on the channel", [Key]),
+    [encode_fs_val(<<"sip_multipart_", Key/binary>>, Value) | Vars].

@@ -189,11 +189,14 @@
 -define(CREDS_KEY(Realm, Username), {'authn', Username, Realm}).
 
 -define(DP_EVENT_VARS, [{<<"Execute-On-Answer">>, <<"execute_on_answer">>}
+                       ,{<<"Execute-On-Pre-Answer">>, <<"execute_on_pre_answer">>}
                        ,{<<"Execute-On-Bridge">>, <<"execute_on_pre_bridge">>}
                        ,{<<"Execute-On-Before-Bridge">>, <<"execute_on_pre_bridge">>}
                        ,{<<"Execute-On-After-Bridge">>, <<"execute_on_after_bridge">>}
                        ,{<<"Execute-On-Tone-Detect">>, <<"execute_on_tone_detect">>}
                        ,{<<"Execute-On-Record-Post-Process">>, <<"record_post_process_exec_app">>}
+                       ,{<<"Execute-On-Media">>, <<"execute_on_media">>}
+                       ,{<<"Execute-On-Ring">>, <<"execute_on_ring">>}
                        ]).
 -define(BRIDGE_CHANNEL_VAR_SEPARATOR, "!").
 -define(RECORD_CALL_PARAM_SEPARATOR, "#").
@@ -216,6 +219,8 @@
                               ,{<<"Bridge-Generate-Comfort-Noise">>,<<"bridge_generate_comfort_noise">>}
                               ,{<<"Bypass-Media">>, <<"bypass_media_after_bridge">>}
                               ,{<<"Bypass-Proxy">>, <<"bypass_proxy">>}
+
+                              ,{<<"Controller-App-Name">>, <<"controller_app_name">>}
 
                               ,{<<"Callee-ID-Name">>, <<"callee_id_name">>}
                               ,{<<"Callee-ID-Number">>, <<"callee_id_number">>}
@@ -255,6 +260,8 @@
                               ,{<<"Enable-T38-Passthrough">>, <<"t38_passthru">>}
                               ,{<<"Enable-T38-Gateway">>, <<"execute_on_answer_fax_t38_gateway">>}
                               ,{<<"Endpoint-Delay">>, <<"leg_delay_start">>}
+                              ,{<<"Endpoint-Mark-Ring-Ready">>, <<"kz-endpoint-mark-ring-ready">>}
+                              ,{<<"Endpoint-Ignore-Mark-Ring-Ready">>, <<"kz-endpoint-ignore-mark-ring-ready">>}
                               ,{<<"Endpoint-Progress-Timeout">>, <<"leg_progress_timeout">>}
                               ,{<<"Endpoint-Timeout">>, <<"leg_timeout">>}
                               ,{<<"Export-Variables">>, <<"export_vars">>}
@@ -276,6 +283,7 @@
                               ,{<<"Ignore-Display-Updates">>, <<"ignore_display_updates">>}
                               ,{<<"Ignore-Early-Media">>, <<"ignore_early_media">>}
                               ,{<<"Ignore-Ring-Ready">>, <<"ignore_ring_ready">>}
+                              ,{<<"Ignore-Mark-Ring-Ready">>, <<"ignore_mark_ring_ready">>}
                               ,{<<"Ignore-Forward">>, <<"outbound_redirect_fatal">>}
                               ,{<<"Inherit-Codec">>, <<"inherit_codec">>}
                               ,{<<"Loopback-Bowout">>, <<"loopback_bowout">>}
@@ -311,6 +319,8 @@
                               ,{<<"Record-Sample-Rate">>, <<"record_sample_rate">>}
                               ,{<<"Request-URI">>, <<"sip_req_uri">>}
                               ,{<<"Signal-Bridge-To">>, <<"signal_bridge_to">>}
+                              ,{<<"SIP-Asserted-Identity-Send-Tel-URI">>, <<"sip_send_tel_paid">>}
+                              ,{<<"SIP-Identity-Passthru">>, <<"sip_identity_passthru">>}
                               ,{<<"SIP-Invite-Parameters">>, <<"sip_invite_params">>}
                               ,{<<"SIP-Invite-Contact-User">>, <<"sip_contact_user">>}
                               ,{<<"SIP-Invite-Domain">>, <<"sip_invite_domain">>}
@@ -323,6 +333,11 @@
                               ,{<<"Secure-ZRTP">>, <<"zrtp_secure_media">>}
                               ,{<<"Simplify-Loopback">>, <<"loopback_bowout_on_execute">>}
                               ,{<<"Proxy-Path">>, <<"sip_route_uri">>}
+                              ,{<<"Proxy-URI">>, <<"sip_proxy_uri">>}
+                              ,{<<"Proxy-Route">>, <<"sip_route_uri">>}
+                              ,{<<"Proxy-Bypass-Dynamic-Proxy">>, <<"bypass_proxy">>}
+                              ,{<<"Proxy-Tag">>, <<"sip_outbound_proxy_tag">>}
+                              ,{<<"Proxy-Zone">>, <<"sip_outbound_proxy_zone">>}
                               ,{<<"To-URI">>, <<"sip_to_uri">>}
                               ,{<<"To-User">>, <<"sip_to_user">>}
                               ,{<<"To-Realm">>, <<"sip_to_realm">>}
@@ -378,6 +393,7 @@
                               ,{<<"Account-Cross-Boundary">>, <<"loopback_cross_boundary">>}
                               ,{<<"RTP-Disable-Hold">>, <<"rtp_disable_hold">>}
                               ,{<<"Call-Forward-Diversions">>, <<"sip_diversions">>}
+                              ,{<<"Presence-Aliases">>, <<"presence_aliases">>}
                               ]).
 
 %% Call and Channel Vars that have a special transform value instead of the
