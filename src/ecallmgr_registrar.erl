@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2011-2021, 2600Hz
+%%% @copyright (C) 2011-2023, 2600Hz
 %%% @doc Listener for reg_success, and reg_query AMQP requests
 %%% @author James Aimonetti
 %%%
@@ -47,6 +47,8 @@
 
 -include("ecallmgr.hrl").
 -include_lib("kazoo_sip/include/kzsip_uri.hrl").
+
+-elvis([{elvis_style, no_debug_call, disable}]).
 
 -define(SERVER, ?MODULE).
 
@@ -118,7 +120,8 @@
                       ,to_user = <<"nouser">> :: kz_term:ne_binary() | '_'
                       ,user_agent :: kz_term:api_ne_binary() | '_'
                       ,username :: kz_term:api_ne_binary() | '_'
-                      ,endpoint_info :: kz_term:api_object() | '_'
+                      ,endpoint_token :: kz_term:api_ne_binary() | '_'
+                      ,meta_id :: kz_term:api_ne_binary() | '_'
                       }).
 
 -type registration() :: #registration{}.
@@ -141,6 +144,7 @@ start_link() ->
                             ,{'queue_name', ?REG_QUEUE_NAME}
                             ,{'queue_options', ?REG_QUEUE_OPTIONS}
                             ,{'consume_options', ?REG_CONSUME_OPTIONS}
+                            ,{'auto_gc', 'false'}
                             ]
                            ,[]
                            ).
@@ -210,12 +214,15 @@ lookup_endpoint(<<EndpointId/binary>>, <<AccountId/binary>>) ->
     case ets:match_object(?MODULE, MatchSpec) of
         [] ->
             {'error', 'not_found'};
-        [#registration{}=Reg] ->
-            {'ok', to_endpoint(Reg)}
+        [#registration{endpoint_token='undefined'}] ->
+            {'ok', []};
+        [#registration{endpoint_token=Token}] ->
+            {'ok', [{'token', Token}]}
     end.
 
 -spec lookup_proxy_path(kz_term:ne_binary(), kz_term:ne_binary()) ->
           {'ok', kz_term:api_ne_binary(), kz_term:proplist()} |
+          {'ok', [{kz_term:api_ne_binary(), kz_term:proplist()}]} |
           {'error', 'not_found'}.
 lookup_proxy_path(<<>>, _Username) -> {'error', 'not_found'};
 lookup_proxy_path(_Realm, <<>>) -> {'error', 'not_found'};
@@ -224,20 +231,68 @@ lookup_proxy_path(<<Realm/binary>>, <<Username/binary>>) ->
                              ,authorizing_id = Username
                              ,_ = '_'
                              },
-
     case ets:match_object(?MODULE, MatchSpec) of
-        [] ->
-            {'ok', 'undefined', []};
-        [#registration{}=Reg] ->
-            {'ok', proxy_with_transport(Reg), contact_vars(to_props(Reg))}
+        [] -> lookup_meta_path(Realm, Username);
+        [#registration{proxy = Proxy}=Reg] -> {'ok', Proxy, proxy_vars(Reg)}
     end.
 
--spec proxy_with_transport(registration()) -> binary().
-proxy_with_transport(#registration{proxy = Proxy, proxy_proto = Proto}) ->
-    case re:run(Proxy, <<"transport">>) of
-        nomatch -> list_to_binary([Proxy, ";transport=", Proto]);
-        _Else -> Proxy
+-spec lookup_meta_path(kz_term:ne_binary(), kz_term:ne_binary()) ->
+          {'ok', [{kz_term:api_ne_binary(), kz_term:proplist()}]} |
+          {'error', 'not_found'}.
+lookup_meta_path(<<Realm/binary>>, <<Username/binary>>) ->
+    MatchSpec = #registration{account_id = Realm
+                             ,meta_id = Username
+                             ,_ = '_'
+                             },
+    case ets:match_object(?MODULE, MatchSpec) of
+        [] -> {'error', 'not_found'};
+        Regs -> {ok, [{Proxy, proxy_vars(Reg)} || #registration{proxy = Proxy}=Reg <- Regs]}
     end.
+
+-spec proxy_vars_options(registration()) -> map().
+proxy_vars_options(Reg) ->
+    Funs = [fun proxy_var_option_token/2
+           ],
+    lists:foldl(proxy_vars_options_fun(Reg), #{}, Funs).
+
+proxy_vars_options_fun(Reg) ->
+    fun(F, Acc) ->
+            F(Reg, Acc)
+    end.
+
+-spec proxy_var_option_token(registration(), map()) -> map().
+proxy_var_option_token(#registration{endpoint_token='undefined'}, Options) -> Options;
+proxy_var_option_token(#registration{}, Options) -> Options#{token_registration => 'true'}.
+
+-spec proxy_vars(registration()) -> kz_term:proplist().
+proxy_vars(Reg) ->
+    proxy_vars(to_props(Reg), proxy_vars_options(Reg)).
+
+-spec proxy_vars(kz_term:proplist(), map()) -> kz_term:proplist().
+proxy_vars(Props, Options) ->
+    lists:usort(lists:foldl(proxy_vars_fun(Options), [], Props)).
+
+proxy_vars_fun(Options) ->
+    fun(Prop, Acc) ->
+            proxy_vars_fold(Prop, Acc, Options)
+    end.
+
+-spec proxy_vars_fold({kz_term:ne_binary(), term()}, kz_term:proplist(), map()) -> kz_term:proplist().
+proxy_vars_fold({<<"Proxy-Protocol">>, Proto}, Props, _Options) ->
+    case kz_term:to_lower_binary(Proto) of
+        <<"ws", _/binary>> ->
+            [{<<"Media-Webrtc">>, 'true'}
+            ,{<<"RTCP-MUX">>, 'true'}
+            | Props
+            ];
+        _ -> Props
+    end;
+proxy_vars_fold({<<"AOR">>, AOR}, Props, #{token_registration := 'true'}) ->
+    [{<<"SIP-Invite-To-URI">>, AOR}
+    ,{<<"KAZOO-AOR">>, AOR}
+    | Props
+    ];
+proxy_vars_fold(_Prop , Props, _Options) -> Props.
 
 -spec lookup_contact(kz_term:ne_binary(), kz_term:ne_binary()) ->
           {'ok', kz_term:ne_binary(), kz_term:proplist()} |
@@ -247,15 +302,8 @@ lookup_contact(_Realm, <<>>) -> {'error', 'not_found'};
 lookup_contact(<<Realm/binary>>, <<Username/binary>>) ->
     case get_registration(Realm, Username) of
         'undefined' -> fetch_contact(Username, Realm);
-        #registration{contact=Contact
-                     ,bridge_uri='undefined'
-                     }=Reg ->
+        #registration{contact=Contact}=Reg ->
             lager:info("found user ~s@~s contact ~s"
-                      ,[Username, Realm, Contact]
-                      ),
-            {'ok', Contact, contact_vars(to_props(Reg))};
-        #registration{bridge_uri=Contact}=Reg ->
-            lager:info("found user ~s@~s bridge uri  ~s"
                       ,[Username, Realm, Contact]
                       ),
             {'ok', Contact, contact_vars(to_props(Reg))}
@@ -275,17 +323,8 @@ contact_vars_fold({<<"Proxy-Protocol">>, Proto}, Props) ->
             ];
         _ -> Props
     end;
-contact_vars_fold({<<"Original-Contact">>, Contact}, Props) ->
-    [#uri{}=UriContact] = kzsip_uri:uris(Contact),
-    case props:get_value(<<"transport">>, UriContact#uri.opts) of
-        'undefined' -> Props;
-        Transport -> contact_vars_fold({<<"Proxy-Protocol">>, Transport}, Props)
-    end;
-contact_vars_fold({<<"AOR">>, AOR}, Props) ->
-    [{<<"SIP-Invite-To-URI">>, AOR}
-    ,{<<"KAZOO-AOR">>, AOR}
-    | Props
-    ];
+contact_vars_fold({<<"Proxy-Path">>, ProxyPath}, Props) ->
+    [{<<"Proxy-Path">>, ProxyPath} | Props];
 contact_vars_fold(_ , Props) -> Props.
 
 -spec lookup_original_contact(kz_term:ne_binary(), kz_term:ne_binary()) ->
@@ -400,7 +439,7 @@ details(Username, Realm) ->
     Id =  registration_id(Username, Realm),
     MatchSpec =
         [{#registration{id = '$1', _ = '_'}
-         ,[{'=:=', '$1', {const, Id}}]
+         ,[{'=:=', '$1', {'const', Id}}]
          ,['$_']
          }
         ],
@@ -689,7 +728,7 @@ sort_fetched_registrations(A, B) ->
 fetch_contact(Username, Realm) ->
     case fetch_registration(Username, Realm) of
         {'ok', JObj} ->
-            Contact = kz_json:get_first_defined([<<"Bridge-RURI">>, <<"Contact">>], JObj),
+            Contact = kz_json:get_ne_binary_value(<<"Contact">>, JObj),
             lager:info("found user ~s@~s contact ~s via fetch"
                       ,[Username, Realm, Contact]
                       ),
@@ -924,12 +963,34 @@ get_realm(Key, JObj) ->
         Realm -> Realm
     end.
 
+endpoint_from_token('undefined') -> kz_json:new();
+endpoint_from_token(EndpointToken) ->
+    endpoint_from_token_ccvs(EndpointToken, kz_auth:validate_token(EndpointToken)).
+
+endpoint_from_token_ccvs(_Token, {'error', _}) -> kz_json:new();
+endpoint_from_token_ccvs(Token, {'ok', Claims}) ->
+    EndpointId = kz_auth_claims:id(Claims),
+    AccountId = kz_auth_claims:account_id(Claims),
+    Result = kz_endpoint:get(EndpointId, AccountId, [{'token', Token}]),
+    endpoint_from_token_ccvs(Result).
+
+endpoint_from_token_ccvs({'error', _}) -> kz_json:new();
+endpoint_from_token_ccvs({'ok', Endpoint}) ->
+    Props = [{<<"Owner-ID">>, kzd_endpoint:owner_id(Endpoint)}
+            ,{<<"Account-Realm">>, kzd_endpoint:account_realm(Endpoint)}
+            ,{<<"Account-Name">>, kzd_endpoint:account_name(Endpoint)}
+            ,{<<"Presence-ID">>, kzd_endpoint:presence_id(Endpoint)}
+            ,{<<"Endpoint-Meta-ID">>, kzd_endpoint:meta_id(Endpoint)}
+            ],
+    kz_json:from_list(Props).
+
 -spec augment_registration(registration(), kz_json:object()) -> registration().
 augment_registration(Reg, JObj) ->
     CCVs = kz_json:get_json_value(<<"Custom-Channel-Vars">>, JObj, kz_json:new()),
-    EndpointInfo = kz_json:get_json_value(<<"Endpoint-Info">>, CCVs, kz_json:new()),
+    EndpointToken = kz_json:get_ne_binary_value(<<"Endpoint-Token">>, CCVs),
+    EndpointCCVsFromToken = endpoint_from_token(EndpointToken),
 
-    FindFun = fun(Key, Default) -> kz_json:find(Key, [JObj, CCVs, EndpointInfo], Default) end,
+    FindFun = fun(Key, Default) -> kz_json:find(Key, [JObj, CCVs, EndpointCCVsFromToken], Default) end,
 
     AccountId = FindFun(<<"Account-ID">>, Reg#registration.account_id),
 
@@ -957,7 +1018,8 @@ augment_registration(Reg, JObj) ->
                     ,presence_id=FindFun(<<"Presence-ID">>, Reg#registration.presence_id)
                     ,register_overwrite_notify=OverwriteNotify
                     ,suppress_unregister=SuppressUnregister
-                    ,endpoint_info=EndpointInfo
+                    ,endpoint_token=EndpointToken
+                    ,meta_id=FindFun(<<"Endpoint-Meta-ID">>, Reg#registration.meta_id)
                     }.
 
 -spec fix_contact(kz_term:api_binary()) -> kz_term:api_binary().
@@ -969,7 +1031,7 @@ fix_contact(Contact) ->
 bridge_uri(_Contact, 'undefined', _, _) -> 'undefined';
 bridge_uri('undefined', _Proxy, _, _) -> 'undefined';
 bridge_uri(Contact, Proxy, Username, Realm) ->
-    [#uri{}=UriContact] = kzsip_uri:uris(Contact),
+    [#uri{opts = ContactOptions}=UriContact] = kzsip_uri:uris(Contact),
     [#uri{}=UriProxy] = kzsip_uri:uris(Proxy),
     Scheme = UriContact#uri.scheme,
     Options = #{uri_contact => UriContact
@@ -979,31 +1041,22 @@ bridge_uri(Contact, Proxy, Username, Realm) ->
     BridgeUri = #uri{scheme=Scheme
                     ,user=Username
                     ,domain=Realm
-                    ,opts=BridgeUriOptions
+                    ,opts= ContactOptions ++ BridgeUriOptions
                     },
     kzsip_uri:ruri(BridgeUri).
 
 -spec bridge_uri_options(map()) -> kz_term:proplist().
 bridge_uri_options(Options) ->
-    Routines = [fun bridge_uri_transport/2
-               ,fun bridge_uri_path/2
+    Routines = [fun bridge_uri_path/2
                ],
     lists:foldl(fun(Fun, Acc) -> Fun(Options, Acc) end, [], Routines).
 
--spec bridge_uri_transport(map(), kz_term:proplist()) -> kz_term:proplist().
-bridge_uri_transport(#{uri_contact := UriContact}, Acc) ->
-    case application:get_env(?APP, 'use_transport_for_fs_path', 'false') of
-        'true' ->
-            case props:get_value(<<"transport">>, UriContact#uri.opts) of
-                'undefined' -> Acc;
-                Transport -> [{<<"transport">>, Transport} | Acc]
-            end;
-        'false' -> Acc
-    end.
-
 -spec bridge_uri_path(map(), kz_term:proplist()) -> kz_term:proplist().
 bridge_uri_path(#{uri_proxy := UriProxy}, Acc) ->
-    [{<<"fs_path">>, kzsip_uri:ruri(UriProxy)} | Acc].
+    #uri{opts = Options, ext_opts = ExtraOptions} = UriProxy,
+    UriOptions = Options ++ ExtraOptions,
+    Uri = UriProxy#uri{opts = UriOptions, ext_opts = []},
+    [{<<"fs_path">>, list_to_binary(["<", kzsip_uri:ruri(Uri), ">"])} | Acc].
 
 -spec existing_or_new_registration(kz_term:ne_binary(), kz_term:ne_binary()) -> registration().
 existing_or_new_registration(Username, Realm) ->
@@ -1228,20 +1281,6 @@ registration_notify(#registration{contact=Contact
               ]),
     kapi_presence:publish_register_overwrite(Props).
 
--spec to_endpoint(registration()) -> kz_term:proplist().
-to_endpoint(Reg) ->
-    EndpointInfo = kz_json:normalize(Reg#registration.endpoint_info),
-    props:filter_undefined(
-      [{<<"pvt_account_id">>, Reg#registration.account_id}
-      ,{<<"id">>, Reg#registration.authorizing_id}
-      ,{<<"pvt_type">>, Reg#registration.authorizing_type}
-      ,{<<"owner_id">>, Reg#registration.owner_id}
-      ,{<<"presence_id">>, Reg#registration.presence_id}
-      ,{<<"sip">>, kz_json:get_json_value(<<"user_agent">>, EndpointInfo)}
-      | kz_json:to_proplist(kz_json:delete_keys([<<"user_agent">>], EndpointInfo))
-      ]
-     ).
-
 -spec to_props(registration()) -> kz_term:proplist().
 to_props(Reg) ->
     props:filter_undefined(
@@ -1282,7 +1321,8 @@ to_props(Reg) ->
       ,{<<"To-User">>, Reg#registration.to_user}
       ,{<<"User-Agent">>, Reg#registration.user_agent}
       ,{<<"Username">>, Reg#registration.username}
-      ,{<<"Endpoint-Info">>, Reg#registration.endpoint_info}
+      ,{<<"Endpoint-Token">>, Reg#registration.endpoint_token}
+      ,{<<"Endpoint-Meta-ID">>, Reg#registration.meta_id}
       ,{<<"AOR">>, list_to_binary(["sip:", Reg#registration.username, "@", Reg#registration.realm])}
       ]
      ).
@@ -1300,8 +1340,7 @@ no_registrar_in_reg_zone(Zone) ->
 
 -spec oldest_registrar(boolean()) -> boolean().
 oldest_registrar(Federated) ->
-    kz_nodes:whapp_zone_count(?APP_NAME) =:= 1
-        orelse kz_nodes:whapp_oldest_node(?APP_NAME, Federated) =:= node().
+    kz_nodes:whapp_oldest_node(?APP_NAME, Federated) =:= node().
 
 -spec get_fs_contact(kzd_freeswitch:data()) -> kz_term:ne_binary().
 get_fs_contact(FSJObj) ->

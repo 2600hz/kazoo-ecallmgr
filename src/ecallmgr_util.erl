@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2021, 2600Hz
+%%% @copyright (C) 2010-2023, 2600Hz
 %%% @doc Various utilities specific to ecallmgr. More general utilities go
 %%% in kazoo_util.erl
 %%%
@@ -24,6 +24,7 @@
 -export([multi_set_args/2, multi_unset_args/2]).
 -export([multi_set_args/3, multi_unset_args/3]).
 -export([multi_set_args/4, multi_unset_args/4]).
+-export([set_prefix/0]).
 
 -export([get_expires/1]).
 -export([get_interface_list/1, get_interface_properties/1, get_interface_properties/2]).
@@ -39,7 +40,7 @@
 -export([build_bridge_channels/1, build_simple_channels/1]).
 -export([create_masquerade_event/2, create_masquerade_event/3]).
 -export([media_path/1, media_path/2, media_path/3, media_path/4
-        ,moh_media_path/4
+        ,moh_media_path/3, moh_media_path/4
         ,lookup_media/4
         ,request_media_url/4
         ]).
@@ -58,6 +59,8 @@
 
 -export([dialplan_application/1]).
 
+-export([get_resolve_options/0]).
+
 -ifdef(TEST).
 -export([endpoint_jobjs_to_records/1
         ,maybe_filter_failover_channels/2
@@ -70,6 +73,36 @@
 -include_lib("kazoo_stdlib/include/kz_databases.hrl").
 -include_lib("kazoo_sip/include/kzsip_uri.hrl").
 
+-define(HTTP_GET_PREFIX, "http_cache://").
+
+-define(CONFERENCE_VAR_MAP, [{<<"variable_conference_moderator">>, {<<"Is-Moderator">>, fun kz_term:to_boolean/1}}
+                            ,{<<"Floor">>, fun kz_term:to_boolean/1}
+                            ,{<<"Video">>, fun kz_term:to_boolean/1}
+                            ,{<<"See">>, fun kz_term:to_boolean/1}
+                            ,{<<"Speak">>, fun kz_term:to_boolean/1}
+                            ,{<<"Hear">>, fun kz_term:to_boolean/1}
+                            ,{<<"Talking">>, fun kz_term:to_boolean/1}
+                            ,{<<"Mute-Detect">>, fun kz_term:to_boolean/1}
+                            ,{<<"Energy-Level">>, fun kz_term:to_integer/1}
+                            ,{<<"Current-Energy">>, fun kz_term:to_integer/1}
+                            ,{<<"Member-ID">>, fun kz_term:to_integer/1}
+                            ,{<<"Member-Ghost">>, fun kz_term:to_boolean/1}
+                            ]).
+
+-define(CONFERENCE_VARS, [<<"variable_conference_moderator">>
+                         ,<<"Floor">>
+                         ,<<"Video">>
+                         ,<<"See">>
+                         ,<<"Speak">>
+                         ,<<"Hear">>
+                         ,<<"Talking">>
+                         ,<<"Mute-Detect">>
+                         ,<<"Energy-Level">>
+                         ,<<"Member-ID">>
+                         ,<<"Member-Type">>
+                         ,<<"Member-Ghost">>
+                         ]).
+
 -define(FS_MULTI_VAR_SEP, kapps_config:get_ne_binary(?APP_NAME, <<"multivar_separator">>, <<"\~">>)).
 -define(FS_MULTI_VAR_SEP_PREFIX, "^^").
 -define(SANITIZE_FS_VALUE_REGEX
@@ -79,9 +112,12 @@
        ,kapps_config:get_boolean(?APP_NAME, <<"failover_when_all_unreg">>, 'false')
        ).
 
--define(KZ_MOH_KEY, <<"Hold-Media-Preserve-Position">>).
--define(KZ_MOH_CONFIG_KEY, kz_json:normalize_key(?KZ_MOH_KEY)).
--define(KZ_MOH_DEFAULT, kapps_config:get_boolean(?APP_NAME, ?KZ_MOH_CONFIG_KEY, 'true')).
+-define(KZ_MOH_OPTIONS_KEY, <<"Hold-Media-Options">>).
+-define(KZ_MOH_OPTION_PRESERVE_POSITION, <<"preserve-position">>).
+-define(KZ_MOH_OPTION_RANDOM_START, <<"random-start">>).
+-define(KZ_MOH_OPTIONS, [?KZ_MOH_OPTION_PRESERVE_POSITION, ?KZ_MOH_OPTION_RANDOM_START]).
+-define(KZ_MOH_OPTION_DEFAULT_KEY(Option), [kz_json:normalize_key(HoldMediaOption) || HoldMediaOption <- [?KZ_MOH_OPTIONS_KEY, Option]]).
+-define(KZ_MOH_OPTION_DEFAULT(Option,Default), kapps_config:get_boolean(?APP_NAME, ?KZ_MOH_OPTION_DEFAULT_KEY(Option), Default)).
 
 -type send_cmd_ret() :: fs_sendmsg_ret() | fs_api_ret().
 -export_type([send_cmd_ret/0]).
@@ -137,7 +173,8 @@ send_cmd(Node, UUID, App, "playseek", Cmd) ->
 send_cmd(Node, UUID, App, "unbridge", _) ->
     lager:debug("execute on node ~s: ~s uuid_park(~s)", [Node, App, UUID]),
     freeswitch:api(Node, 'uuid_park', UUID);
-send_cmd(Node, _UUID, App, "broadcast", Args) ->
+send_cmd(Node, UUID, App, "broadcast", BroadcastArgs) ->
+    Args = iolist_to_binary([UUID, " ", BroadcastArgs]),
     lager:debug("execute on node ~s: ~s uuid_broadcast(~s)", [Node, App, Args]),
     Resp = freeswitch:api(Node, 'uuid_broadcast', iolist_to_binary(Args)),
     lager:debug("broadcast resulted in: ~p", [Resp]),
@@ -183,7 +220,7 @@ send_cmd(Node, UUID, <<"bridge">> = App, <<"xferext">>, Dialplan, Args) ->
                ,[Node, UUID, App, Result, AppUUID]
                ),
     case Result of
-        ok -> {ok, AppUUID};
+        'ok' -> {'ok', AppUUID};
         _Else -> Result
     end;
 
@@ -282,7 +319,7 @@ get_sip_interface_from_db([FsPath]) ->
     NetworkMap = kapps_config:get_json(?APP_NAME, <<"network_map">>, kz_json:new()),
     case map_fs_path_to_sip_profile(FsPath, NetworkMap) of
         'undefined' ->
-            lager:debug("unable to find network map for ~s, using default interface '~s'"
+            lager:debug("unable to find the network map for ~s, using default interface '~s'"
                        ,[FsPath, ?SIP_INTERFACE]),
             ?SIP_INTERFACE;
         Else ->
@@ -439,8 +476,6 @@ multi_unset_args(UUID, KVs, Separator, Prefix) ->
     fs_args_to_binary(lists:reverse(process_fs_kv(UUID, KVs, 'unset')), Separator, Prefix).
 
 -spec fs_args_to_binary(list()) -> binary().
-fs_args_to_binary([_]=Args) ->
-    list_to_binary(Args);
 fs_args_to_binary(Args) ->
     fs_args_to_binary(Args, ?FS_MULTI_VAR_SEP).
 
@@ -519,7 +554,7 @@ process_fs_kv(UUID, [K|KVs], 'unset'=Action)
                ).
 
 process_fs_kv_fold(UUID, {K, V}, Action, Acc) ->
-    [format_fs_kv(K, V, UUID, Action) | Acc];
+    format_fs_kv(K, V, UUID, Action) ++ Acc;
 process_fs_kv_fold(_UUID, K, 'unset', Acc)
   when is_binary(K) ->
     Key = get_fs_key(K),
@@ -547,6 +582,12 @@ get_fs_kv(Key, Value) ->
     get_fs_kv(Key, Value, 'undefined').
 
 -spec get_fs_kv(kz_term:ne_binary(), kz_term:ne_binary(), kz_term:api_binary()) -> binary().
+get_fs_kv(<<"Merged-Hold-Media">>, JObj, UUID) ->
+    MediaPath = moh_media_path('extant', UUID, JObj),
+    list_to_binary(["hold_music=", MediaPath]);
+get_fs_kv(<<"Merged-Custom-Hold-Media">>, JObj, UUID) ->
+    MediaPath = moh_media_path('extant', UUID, JObj),
+    list_to_binary(["temp_hold_music=", MediaPath]);
 get_fs_kv(<<"Hold-Media">>, Media, UUID) ->
     MediaPath = moh_media_path(Media, 'extant', UUID, kz_json:new()),
     list_to_binary(["hold_music=", MediaPath]);
@@ -570,7 +611,7 @@ get_fs_key(<<?CHANNEL_LOOPBACK_HEADER_PREFIX, K/binary>>) ->
 get_fs_key(Key) ->
     case lists:keyfind(Key, 1, ?SPECIAL_CHANNEL_VARS) of
         'false' -> ?CCV(Key);
-        {_, Prefix} -> Prefix
+        {_, FSKey} -> FSKey
     end.
 
 -spec get_fs_key_and_value(kz_term:ne_binary()
@@ -580,6 +621,12 @@ get_fs_key(Key) ->
           {kz_term:ne_binary(), binary()} |
           [{kz_term:ne_binary(), binary()}] |
           'skip'.
+get_fs_key_and_value(<<"Merged-Hold-Media">>, JObj, UUID) ->
+    MediaPath = moh_media_path('extant', UUID, JObj),
+    {get_fs_key(<<"Hold-Media">>), MediaPath};
+get_fs_key_and_value(<<"Merged-Custom-Hold-Media">>, JObj, UUID) ->
+    MediaPath = moh_media_path('extant', UUID, JObj),
+    {get_fs_key(<<"Custom-Hold-Media">>), MediaPath};
 get_fs_key_and_value(<<"Hold-Media">>=Key, Media, UUID) ->
     MediaPath = moh_media_path(Media, 'extant', UUID, kz_json:new()),
     {get_fs_key(Key), MediaPath};
@@ -653,11 +700,28 @@ maybe_sanitize_fs_value(<<"Failover-Reasons">>, <<Val/binary>>) ->
     Val;
 maybe_sanitize_fs_value(<<"Failover-Reasons">>, Val) when is_list(Val) ->
     kz_binary:join(Val, <<",">>);
+maybe_sanitize_fs_value(_Key, [First | _] = Val) when is_binary(First) ->
+    kz_binary:join(Val, <<",">>);
 maybe_sanitize_fs_value(Key, Val) when not is_binary(Key) ->
     maybe_sanitize_fs_value(kz_term:to_binary(Key), Val);
 maybe_sanitize_fs_value(Key, Val) when not is_binary(Val) ->
     maybe_sanitize_fs_value(Key, kz_term:to_binary(Val));
-maybe_sanitize_fs_value(_, Val) -> Val.
+maybe_sanitize_fs_value(Key, Val) ->
+    case get_fs_transform_value(Key) of
+        undefined -> Val;
+        Transform -> transform_fs_value(Transform, Val)
+    end.
+
+transform_fs_value({prepend, Prepend}, Val) ->
+    list_to_binary([Prepend, " ", Val]);
+transform_fs_value(media, Val) ->
+    media_path(Val, 'extant', get('callid'), kz_json:new()).
+
+get_fs_transform_value(Key) ->
+    case lists:keyfind(Key, 1, ?SPECIAL_CHANNEL_TRANSFORMS) of
+        {_, Transform} -> Transform;
+        _Else -> undefined
+    end.
 
 %%------------------------------------------------------------------------------
 %% @doc takes endpoints (/sofia/foo/bar), and optionally a caller id name/num
@@ -863,8 +927,7 @@ build_simple_channels(Endpoints) ->
 
 -spec build_bridge_channels(kz_json:objects()) -> bridge_channels().
 build_bridge_channels(Endpoints) ->
-    CWEP = maybe_apply_call_waiting(Endpoints),
-    EPs = endpoint_jobjs_to_records(CWEP),
+    EPs = endpoint_jobjs_to_records(Endpoints),
     FilteredEPs = maybe_filter_failover_channels(EPs, ?FAILOVER_IF_ALL_UNREGED),
     build_bridge_channels(FilteredEPs, []).
 
@@ -880,30 +943,6 @@ maybe_filter_failover_channels(Channels, 'true') ->
     %% it is important to pass bridge strings in intial order to {@link failover_if_all_unregistered/1}
     %% function so only the first duplicated endpoint will ne used.
     failover_if_all_unregistered(lists:reverse(Channels)).
-
--spec maybe_apply_call_waiting(kz_json:objects()) -> kz_json:objects().
-maybe_apply_call_waiting(Endpoints) ->
-    [call_waiting_map(E) || E <- Endpoints].
-
--spec call_waiting_map(kz_json:object()) -> kz_json:object().
-call_waiting_map(Endpoint) ->
-    CCVs = kz_json:get_json_value(<<"Custom-Channel-Vars">>, Endpoint, kz_json:new()),
-    case kz_json:is_true(<<"Call-Waiting-Disabled">>, CCVs) of
-        'false' -> Endpoint;
-        'true' ->
-            OwnerId = kz_json:get_value(<<"Owner-ID">>, CCVs),
-            maybe_add_respond_header(Endpoint, OwnerId)
-    end.
-
--spec maybe_add_respond_header(kz_json:object(), kz_term:ne_binary()) -> kz_json:object().
-maybe_add_respond_header(Endpoint, OwnerId) ->
-    case ecallmgr_fs_channels:has_channels_for_owner(OwnerId) of
-        'true' ->
-            lager:debug("channel must be busy!"),
-            kz_json:set_value([<<"Custom-SIP-Headers">>, <<"X-KAZOO-Respond-With">>], <<"486 User Busy">>, Endpoint);
-        'false' ->
-            Endpoint
-    end.
 
 -spec build_bridge_channels(bridge_endpoints(), build_returns()) -> bridge_channels().
 %% If the Invite-Format is "route" then we have been handed a sip route, do that now
@@ -1105,10 +1144,16 @@ get_sip_contact(#bridge_endpoint{ip_address='undefined'
                                 ,channel_vars=CVs
                                 }=EP) ->
     {'ok', Contact, Props} = ecallmgr_registrar:lookup_contact(Realm, Username),
-    Vars = ecallmgr_fs_xml:build_leg_vars(Props),
+    Vars = ecallmgr_fs_xml:build_leg_vars(contact_vars(Props)),
     NewEP = EP#bridge_endpoint{channel_vars=Vars ++ CVs},
     {binary:replace(Contact, <<">">>, <<>>), NewEP};
 get_sip_contact(#bridge_endpoint{ip_address=IPAddress}) -> IPAddress.
+
+contact_vars(Props) ->
+    lists:map(fun contact_var/1, Props).
+
+contact_var({<<"Proxy-Path">>, V}) -> {<<"Proxy-URI">>, V};
+contact_var(KV) -> KV.
 -endif.
 
 -spec maybe_clean_contact(kz_term:ne_binary(), bridge_endpoint()) -> kz_term:ne_binary().
@@ -1283,7 +1328,7 @@ media_path(MediaName, Type, UUID, JObj) ->
             lager:warning("failed to get media path for ~s: ~p", [MediaName, _E]),
             kz_term:to_binary(MediaName);
         {'ok', Path} ->
-            lager:debug("found path ~s for ~s", [Path, MediaName]),
+            lager:debug("found path ~s for ~s", [kz_log:redactor(Path), MediaName]),
             kz_term:to_binary(get_fs_playback(Path))
     end.
 
@@ -1356,15 +1401,15 @@ maybe_playback_via_shout(URI) ->
 
 -spec maybe_playback_via_http_cache(kz_term:ne_binary()) -> kz_term:ne_binary().
 maybe_playback_via_http_cache(<<?HTTP_GET_PREFIX, _/binary>> = URI) ->
-    lager:debug("media is streamed via http_cache, using ~s", [URI]),
+    lager:debug("media is streamed via http_cache, using ~s", [kz_log:redactor(URI)]),
     URI;
 maybe_playback_via_http_cache(URI) ->
     case kapps_config:is_true(?APP_NAME, <<"use_http_cache">>, 'true') of
         'false' ->
-            lager:debug("using straight URI ~s", [URI]),
+            lager:debug("using straight URI ~s", [kz_log:redactor(URI)]),
             URI;
         'true' ->
-            lager:debug("media is streamed via http_cache, using ~s", [URI]),
+            lager:debug("media is streamed via http_cache, using ~s", [kz_log:redactor(URI)]),
             <<"http_cache://", URI/binary>>
     end.
 
@@ -1440,7 +1485,9 @@ maybe_cache_media_response(MediaName, MediaResp) ->
                                       ,MediaUrl
                                       ,CacheProps
                                       ),
-            lager:debug("media ~s stored to playback cache : ~s", [MediaName, MediaUrl]),
+            lager:debug("media ~s stored to playback cache : ~s"
+                       ,[MediaName, kz_log:redactor(MediaUrl)]
+                       ),
             {'ok', MediaUrl}
     end.
 
@@ -1549,6 +1596,11 @@ fix_contact([Contact | Options], Username, Realm) ->
         _Else -> 'undefined'
     end.
 
+-spec moh_media_path(media_types(), kz_term:ne_binary(), kz_json:object()) -> kz_term:ne_binary().
+moh_media_path(Types, UUID, JObj) ->
+    Media = kz_json:get_ne_binary_value(<<"Hold-Media">>, JObj),
+    moh_media_path(Media, Types, UUID, JObj).
+
 -spec moh_media_path(kz_term:api_binary(), media_types(), kz_term:ne_binary(), kz_json:object()) -> kz_term:ne_binary().
 moh_media_path(Media, Types, UUID, JObj) ->
     try media_path(Media, Types, UUID, JObj) of
@@ -1560,7 +1612,51 @@ moh_media_path(Media, Types, UUID, JObj) ->
 
 -spec maybe_use_kz_moh(kz_term:ne_binary(), kz_json:object()) -> kz_term:ne_binary().
 maybe_use_kz_moh(Media, JObj) ->
-    case kz_json:is_true(?KZ_MOH_KEY, JObj, ?KZ_MOH_DEFAULT) of
-        'true' -> list_to_binary(["kz_moh::", Media]);
-        'false' -> Media
+    case kz_moh_options(JObj) of
+        [] -> Media;
+        Options -> use_kz_moh(Media, Options)
+    end.
+
+-spec kz_moh_options(kz_json:object()) -> kz_term:ne_binaries().
+kz_moh_options(JObj) ->
+    case kz_json:get_ne_binaries(?KZ_MOH_OPTIONS_KEY, JObj) of
+        'undefined' -> kz_moh_default_options();
+        Options -> Options
+    end.
+
+-spec kz_moh_default_options() -> kz_term:ne_binaries().
+kz_moh_default_options() ->
+    lists:foldl(fun kz_moh_default_option_fold/2, [], ?KZ_MOH_OPTIONS).
+
+kz_moh_default_option_fold(?KZ_MOH_OPTION_PRESERVE_POSITION = Key, Acc) ->
+    case ?KZ_MOH_OPTION_DEFAULT(Key, 'true') of
+        'false' -> Acc;
+        'true' -> [Key | Acc]
+    end;
+kz_moh_default_option_fold(Key, Acc) ->
+    case ?KZ_MOH_OPTION_DEFAULT(Key, 'false') of
+        'false' -> Acc;
+        'true' -> [Key | Acc]
+    end.
+
+-spec use_kz_moh(kz_term:ne_binary(), kz_term:ne_binaries()) -> kz_term:ne_binary().
+use_kz_moh(Media, Options) ->
+    case lists:foldl(fun kz_moh_option_to_arg_fold/2, [], Options) of
+        [] -> list_to_binary(["kz_moh::", Media]);
+        Args -> list_to_binary(["kz_moh::%^[", kz_binary:join(Args, <<"^">>), "]", Media])
+    end.
+
+kz_moh_option_to_arg_fold(<<"random-start">>, Args) -> [<<"moh_playback_random=true">> | Args];
+kz_moh_option_to_arg_fold(<<"preserve-position">>, Args) -> [<<"moh_playback_preserve_position=true">> | Args];
+kz_moh_option_to_arg_fold(_Option, Args) -> Args.
+
+-spec set_prefix() -> kz_term:ne_binary().
+set_prefix() -> list_to_binary([?FS_MULTI_VAR_SEP_PREFIX, ?FS_MULTI_VAR_SEP]).
+
+
+-spec get_resolve_options() -> kz_term:proplist().
+get_resolve_options() ->
+    case kapps_config:is_true(?APP_NAME, <<"use_tcp">>, 'false') of
+        'true' -> kz_network_utils:default_options();
+        'false' -> props:set_value('usevc', 'false', kz_network_utils:default_options())
     end.

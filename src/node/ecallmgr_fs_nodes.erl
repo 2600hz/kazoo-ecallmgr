@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2021, 2600Hz
+%%% @copyright (C) 2010-2023, 2600Hz
 %%% @doc When connecting to a FreeSWITCH node, we create three processes: one to
 %%% handle authentication (directory) requests; one to handle route (dialplan)
 %%% requests, and one to monitor the node and various stats about the node.
@@ -54,6 +54,8 @@
 
 -include("ecallmgr.hrl").
 
+-elvis([{elvis_style, no_debug_call, disable}]).
+
 -define(SERVER, ?MODULE).
 
 -define(RESPONDERS, [{{?MODULE, 'handle_directory_cache_clear'}
@@ -79,6 +81,8 @@
               ,connect_strategy = 'ping' :: connect_strategy()
               }).
 -type fs_node() :: #node{}.
+-type fs_node_kv() :: {atom(), fs_node()}.
+-type fs_node_kvs() :: [fs_node_kv()].
 
 -record(capability, {node :: atom() | '$1' | '_'
                     ,name :: kz_term:ne_binary() | '$1' | '$2' | '_'
@@ -171,15 +175,22 @@ flush(Key) ->
 
 -spec do_flush(binary()) -> 'ok'.
 do_flush(Args) ->
-    lager:debug("flushing xml cache ~s from all FreeSWITCH servers", [Args]),
-    _ = [freeswitch:api(Node, 'xml_flush_cache', Args)
-         || Node <- connected(), filter_release(Node)
-        ],
-    'ok'.
+    do_flush(nodes_to_flush(), Args).
 
--spec filter_release(atom()) -> boolean().
-filter_release(Node) ->
-    case freeswitch:release(Node) of
+-spec do_flush([atom()], binary()) -> 'ok'.
+do_flush([], _Args) -> ok;
+do_flush(Nodes, Args) ->
+    lager:debug("flushing xml cache ~s from ~B erlang connected FreeSWITCH servers", [Args, length(Nodes)]),
+    lists:foreach(fun(N) -> freeswitch:api(N, 'xml_flush_cache', Args) end, Nodes).
+
+-spec nodes_to_flush() -> [atom()].
+nodes_to_flush() ->
+    [K || {K, Node} <- fs_nodes(), filter_release(Node)].
+
+-spec filter_release(fs_node()) -> boolean().
+filter_release(#node{connected = false}) -> false;
+filter_release(#node{connected = true, client_version = ClientVersion}) ->
+    case freeswitch:release(ClientVersion) of
         {_, _, <<"community">>} -> true;
         _ -> false
     end.
@@ -732,7 +743,7 @@ maybe_disconnect_from_node(#node{connected='false'}) ->
     'ok'.
 
 -spec maybe_start_node_pinger(fs_node()) -> 'ok'.
-maybe_start_node_pinger(#node{connect_strategy='heartbeat'}) -> ok;
+maybe_start_node_pinger(#node{connect_strategy='heartbeat'}) -> 'ok';
 maybe_start_node_pinger(#node{node=NodeName, options=Props}=Node) ->
     case ecallmgr_fs_pinger_sup:add_node(NodeName, Props) of
         {'ok', _} -> 'ok';
@@ -851,16 +862,16 @@ default_fs_nodename() -> "freeswitch".
 registered_names() ->
     Mod = net_kernel:epmd_module(),
     case Mod:names() of
-        {ok, Names} -> lists:map(fun({K,_V}) -> erlang:list_to_atom(K) end, Names);
+        {'ok', Names} -> lists:map(fun({K,_V}) -> erlang:list_to_atom(K) end, Names);
         _Else -> []
     end.
 
 -spec try_connect_to_default_fs() -> 'skip' | 'ok' | {'error', 'no_connection'}.
 try_connect_to_default_fs() ->
     FSNode = erlang:list_to_atom(default_fs_nodename()),
-    case proplists:is_defined(FSNode, registered_names()) of
-        true -> try_connect_to_default_fs(default_fs_node());
-        false -> skip
+    case props:is_defined(FSNode, registered_names()) of
+        'true' -> try_connect_to_default_fs(default_fs_node());
+        'false' -> 'skip'
     end.
 
 -spec try_connect_to_default_fs(atom()) -> 'skip' | 'ok' | {'error', 'no_connection'}.
@@ -986,3 +997,7 @@ instance_uuid(Node) ->
         Pid when is_pid(Pid) -> ecallmgr_fs_node:instance_uuid(Pid);
         _Else -> 'undefined'
     end.
+
+-spec fs_nodes() -> fs_node_kvs().
+fs_nodes() ->
+    gen_server:call(?SERVER, 'nodes').

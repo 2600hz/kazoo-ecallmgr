@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2021, 2600Hz
+%%% @copyright (C) 2010-2023, 2600Hz
 %%% @doc
 %%% This Source Code Form is subject to the terms of the Mozilla Public
 %%% License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -146,8 +146,9 @@ exec_dial(ConferenceNode, ConferenceId, JObj) ->
 exec_dial(ConferenceNode, ConferenceId, JObj, Endpoints) ->
     lager:info("conference ~s is running on ~s, dialing out", [ConferenceId, ConferenceNode]),
     Pid = self(),
+    IteractionId = ?CALL_INTERACTION_DEFAULT,
     Pids = [kz_process:spawn(fun() ->
-                                     exec_endpoint(Pid, ConferenceNode, ConferenceId, JObj, Endpoint)
+                                     exec_endpoint(Pid, ConferenceNode, ConferenceId, IteractionId, JObj, Endpoint)
                              end) || Endpoint <- Endpoints],
     Num = length(Pids),
     handle_responses(JObj, Num, []).
@@ -162,9 +163,11 @@ handle_responses(JObj, N, Responses) ->
         {'result', Response} -> handle_responses(JObj, N - 1, [Response | Responses])
     end.
 
-update_endpoint(Endpoint) ->
+update_endpoint(Endpoint, InteractionId) ->
     Updates = [{fun kz_json:set_value/3, [<<"Custom-Channel-Vars">>, <<"Ecallmgr-Node">>], node()}
               ,{fun kz_json:set_value/3, [<<"Custom-Channel-Vars">>, <<"Ignore-Early-Media">>], 'true'}
+              ,{fun kz_json:set_value/3, [<<"Custom-Channel-Vars">>, <<"Call-Flag-NO-Flip">>], 'true'}
+              ,{fun kz_json:set_value/3, [<<"Custom-Channel-Vars">>, <<?CALL_INTERACTION_ID>>], InteractionId}
               ],
     lists:foldl(fun({F, K, V}, JObj) -> F(K, V, JObj) end, Endpoint, Updates).
 
@@ -175,10 +178,10 @@ endpoint_id(JObj) ->
            ],
     kz_json:get_first_defined(Keys, JObj).
 
--spec exec_endpoint(pid(), atom(), kz_term:ne_binary(), kapi_conference:doc(), kz_json:object()) -> any().
-exec_endpoint(Parent, ConferenceNode, ConferenceId, JObj, EP) ->
+-spec exec_endpoint(pid(), atom(), kz_term:ne_binary(), kz_term:ne_binary(), kapi_conference:doc(), kz_json:object()) -> any().
+exec_endpoint(Parent, ConferenceNode, ConferenceId, InteractionId, JObj, EP) ->
     EndpointCallId = kz_json:find(<<"Outbound-Call-ID">>, [EP, JObj], kz_binary:rand_hex(16)),
-    Endpoint = update_endpoint(EP),
+    Endpoint = update_endpoint(EP, InteractionId),
     EndpointId = endpoint_id(Endpoint),
     lager:debug("endpoint ~s(~s)", [EndpointId, EndpointCallId]),
     _ = (catch gproc:reg({'p', 'l', ?FS_CONFERENCE_EVENT_REG_MSG(ConferenceNode, ConferenceId, <<"add-member">>)})),
@@ -266,11 +269,23 @@ publish_resp(JObj, BaseResps) ->
                        ,fun(P) -> kapi_conference:publish_dial_resp(kz_api:server_id(JObj), P) end
                        ).
 
+-spec publish_error(kapi_conference:doc(), kz_term:ne_binary(), kz_term:ne_binary()) -> 'ok'.
+publish_error(JObj, ConferenceId, Error) ->
+    Resp = [{<<"Msg-ID">>, kz_api:msg_id(JObj)}
+           ,{<<"Conference-ID">>, ConferenceId}
+           ,{<<"Error-Message">>, Error}
+           ,{<<"Request">>, kz_api:remove_defaults(JObj)}
+           | kz_api:default_headers(?APP_NAME, ?APP_VERSION)
+           ],
+    kapi_conference:publish_error(kz_api:server_id(JObj), Resp).
+
 -spec maybe_start_conference(kapi_conference:doc(), kz_term:ne_binary()) -> 'ok'.
 maybe_start_conference(JObj, ConferenceId) ->
     lager:info("conference ~s is not running yet", [ConferenceId]),
     case find_media_server(kz_json:get_ne_binary_value(<<"Target-Call-ID">>, JObj), kz_api:node(JObj)) of
-        'undefined' -> lager:info("no node found for the dial command, ignoring");
+        'undefined' ->
+            lager:info("no node found for the dial command, sending error"),
+            publish_error(JObj, ConferenceId, <<"no media servers available">>);
         MediaServer ->
             lager:info("starting conference ~s on ~s and dialing out", [ConferenceId, MediaServer]),
             exec_dial(MediaServer, ConferenceId, JObj)
@@ -341,5 +356,7 @@ query_cluster_for_call(CallId) ->
 
 -spec choose_random_media_server() -> atom().
 choose_random_media_server() ->
-    [Server|_] = kz_term:shuffle_list(ecallmgr_fs_nodes:connected()),
-    Server.
+    case ecallmgr_fs_nodes:connected() of
+        [] -> 'undefined';
+        Servers -> hd(kz_term:shuffle_list(Servers))
+    end.

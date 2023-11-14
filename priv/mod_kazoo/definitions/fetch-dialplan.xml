@@ -1,8 +1,6 @@
 <definition name="fetch-dialplan">
 	<field name="fetch-info" type="reference" />
-	<field name="Timestamp" type="expand"
-		value="${expr(ceil((${Event-Date-Timestamp} / 1000000) + ${UNIX_EPOCH_IN_GREGORIAN}))}"
-		serialize-as="number" />
+	<field name="Event-Date-Timestamp-Gregorian" as="Timestamp" serialize-as="number"/>
 	<field name="Unique-ID" as="Call-ID" />
 	<field name="variable_sip_invite_domain" as="Domain-Name" />
 	<field name="call-direction" type="reference" />
@@ -17,6 +15,8 @@
 	<field name="destination-number" type="reference" />
 	<field name="Resource-Type" type="static" value="audio" />
 	<field name="hunt-context" type="reference" />
+	<field name="hunt-request" type="reference" />
+	<field name="hunt-privacy" type="reference" />
 	<field name="Call-Setup" type="static" value="true" serialize-as="boolean" />
 	<field name="Hunt-Prepend-CID-Name" as="Prepend-CID-Name"/>
 
@@ -25,4 +25,7 @@
 	<field name="Event-Category" type="static" value="dialplan" />
 	<field name="Event-Name" type="static" value="route_req" />
 	<field name="Hunt-Context" as="Fetch-Key-Value" />
+
+	<field name="variable_sip_diversions" as="SIP-Diversions" as-array="true"/>
+
 </definition>

@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2021, 2600Hz
+%%% @copyright (C) 2012-2023, 2600Hz
 %%% @doc
 %%% This Source Code Form is subject to the terms of the Mozilla Public
 %%% License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -92,6 +92,16 @@ declare_exchanges() ->
 node_bindings() ->
     _ = kz_nodes_bindings:bind('ecallmgr', ?MODULE),
     'ok'.
+
+-define(EVENTSTREAM_MODS, ['ecallmgr_fs_channel_stream'
+                          ,'ecallmgr_fs_conference_stream'
+                          ,'ecallmgr_fs_event_stream_registered'
+                          ,'ecallmgr_call_event_publisher'
+                          ,'ecallmgr_conference_event_publisher'
+                          ,'ecallmgr_presence_event_publisher'
+                          ,'ecallmgr_fs_recordings'
+                          ,'ecallmgr_cdr_event_publisher'
+                          ]).
 
 -spec event_stream_bind() -> 'ok'.
 event_stream_bind() ->

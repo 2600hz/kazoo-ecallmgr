@@ -64,13 +64,13 @@
 -record(channel, {uuid :: kz_term:api_ne_binary() | '$1' | '$2' | '_'
                  ,destination :: kz_term:api_ne_binary() | '_'
                  ,request :: kz_term:api_ne_binary() | '_'
-                 ,direction :: kz_term:api_ne_binary() | '$1' | '_'
+                 ,direction :: kz_term:api_ne_binary() | '$1' | '$3' | '$4' | '$5' | '_'
                  ,account_id :: kz_term:api_ne_binary() | '$1' | '$2' | '_'
                  ,account_billing :: kz_term:api_ne_binary() | '$7' | '_'
-                 ,authorizing_id :: kz_term:api_ne_binary() | '$1' | '$3' | '_'
+                 ,authorizing_id :: kz_term:api_ne_binary() | '$1' | '$2' | '$3' | '_'
                  ,authorizing_type :: kz_term:api_binary() | '_'
                  ,is_authorized :: kz_term:api_boolean() | '_'
-                 ,owner_id :: kz_term:api_ne_binary() | '$1' | '_'
+                 ,owner_id :: kz_term:api_ne_binary() | '$1' | '$3' | '$4' | '_'
                  ,resource_id :: kz_term:api_ne_binary() | '$4' | '_'
                  ,presence_id :: kz_term:api_ne_binary() | '$2' | '_'
                  ,fetch_id :: kz_term:api_ne_binary() | '$5' | '_'
@@ -80,7 +80,7 @@
                  ,realm :: kz_term:api_ne_binary() | '_' | '$2'
                  ,username :: kz_term:api_ne_binary() | '_' | '$1'
                  ,import_moh = 'false' :: boolean() | '_'
-                 ,answered = 'true' :: boolean() | '_'
+                 ,answered = 'false' :: boolean() | '_'
                  ,other_leg :: kz_term:api_binary() | '$2' | '_'
                  ,node :: atom() | '$1' | '$2' | '$3' | '_'
                  ,former_node :: atom() | '$2' | '_'
@@ -105,6 +105,7 @@
                  ,cavs :: kz_term:api_object() | '_'
                  ,ccvs :: kz_term:api_object() | '_'
                  ,cshs :: kz_term:api_object() | '_'
+                 ,cahs :: kz_term:api_object() | '_'
                  ,from :: kz_term:api_binary() | '_'
                  ,to :: kz_term:api_binary() | '_'
                  ,switch_url :: kz_term:api_binary() | '_'
@@ -137,6 +138,7 @@
                     ,origin_node :: atom() | '_'
                     ,control_node :: atom() | '_'
                     ,interaction_id :: kz_term:api_binary() | '_'
+                    ,custom_conference_vars :: kz_term:api_object() | '_'
                     }).
 
 -type conference() :: #conference{}.
@@ -187,11 +189,14 @@
 -define(CREDS_KEY(Realm, Username), {'authn', Username, Realm}).
 
 -define(DP_EVENT_VARS, [{<<"Execute-On-Answer">>, <<"execute_on_answer">>}
+                       ,{<<"Execute-On-Pre-Answer">>, <<"execute_on_pre_answer">>}
                        ,{<<"Execute-On-Bridge">>, <<"execute_on_pre_bridge">>}
                        ,{<<"Execute-On-Before-Bridge">>, <<"execute_on_pre_bridge">>}
                        ,{<<"Execute-On-After-Bridge">>, <<"execute_on_after_bridge">>}
                        ,{<<"Execute-On-Tone-Detect">>, <<"execute_on_tone_detect">>}
                        ,{<<"Execute-On-Record-Post-Process">>, <<"record_post_process_exec_app">>}
+                       ,{<<"Execute-On-Media">>, <<"execute_on_media">>}
+                       ,{<<"Execute-On-Ring">>, <<"execute_on_ring">>}
                        ]).
 -define(BRIDGE_CHANNEL_VAR_SEPARATOR, "!").
 -define(RECORD_CALL_PARAM_SEPARATOR, "#").
@@ -213,6 +218,9 @@
                               ,{<<"Bridge-Execute-On-Answer">>, <<"execute_on_answer">>}
                               ,{<<"Bridge-Generate-Comfort-Noise">>,<<"bridge_generate_comfort_noise">>}
                               ,{<<"Bypass-Media">>, <<"bypass_media_after_bridge">>}
+                              ,{<<"Bypass-Proxy">>, <<"bypass_proxy">>}
+
+                              ,{<<"Controller-App-Name">>, <<"controller_app_name">>}
 
                               ,{<<"Callee-ID-Name">>, <<"callee_id_name">>}
                               ,{<<"Callee-ID-Number">>, <<"callee_id_number">>}
@@ -244,12 +252,16 @@
                               ,{<<"Default-Language">>, <<"default_language">>}
                               ,{<<"Channel-Language">>, <<"channel_language">>}
                               ,{<<"Diversions">>, <<"sip_h_Diversion">>}
+                              ,{<<"Eavesdrop-Enable-DTMF">>, <<"eavesdrop_enable_dtmf">>}
                               ,{<<"Eavesdrop-Group">>, <<"eavesdrop_group">>}
                               ,{<<"Eavesdrop-Group-ID">>, <<"eavesdrop_group">>}
                               ,{<<"Enable-T38-Fax">>, <<"fax_enable_t38">>}
                               ,{<<"Enable-T38-Fax-Request">>, <<"fax_enable_t38_request">>}
                               ,{<<"Enable-T38-Passthrough">>, <<"t38_passthru">>}
+                              ,{<<"Enable-T38-Gateway">>, <<"execute_on_answer_fax_t38_gateway">>}
                               ,{<<"Endpoint-Delay">>, <<"leg_delay_start">>}
+                              ,{<<"Endpoint-Mark-Ring-Ready">>, <<"kz-endpoint-mark-ring-ready">>}
+                              ,{<<"Endpoint-Ignore-Mark-Ring-Ready">>, <<"kz-endpoint-ignore-mark-ring-ready">>}
                               ,{<<"Endpoint-Progress-Timeout">>, <<"leg_progress_timeout">>}
                               ,{<<"Endpoint-Timeout">>, <<"leg_timeout">>}
                               ,{<<"Export-Variables">>, <<"export_vars">>}
@@ -264,12 +276,14 @@
                               ,{<<"From-URI">>, <<"sip_from_uri">>}
                               ,{<<"From-User">>, <<"sip_from_user">>}
                               ,{<<"Hangup-After-Pickup">>, <<"hangup_after_bridge">>}
+                              ,{<<"Hangup-After-Bridge">>, <<"hangup_after_bridge">>}
                               ,{<<"Hold-Media">>, <<"hold_music">>}
                               ,{<<"Custom-Hold-Media">>, <<"temp_hold_music">>}
                               ,{<<"Ignore-Completed-Elsewhere">>, <<"ignore_completed_elsewhere">>}
                               ,{<<"Ignore-Display-Updates">>, <<"ignore_display_updates">>}
                               ,{<<"Ignore-Early-Media">>, <<"ignore_early_media">>}
                               ,{<<"Ignore-Ring-Ready">>, <<"ignore_ring_ready">>}
+                              ,{<<"Ignore-Mark-Ring-Ready">>, <<"ignore_mark_ring_ready">>}
                               ,{<<"Ignore-Forward">>, <<"outbound_redirect_fatal">>}
                               ,{<<"Inherit-Codec">>, <<"inherit_codec">>}
                               ,{<<"Loopback-Bowout">>, <<"loopback_bowout">>}
@@ -305,6 +319,8 @@
                               ,{<<"Record-Sample-Rate">>, <<"record_sample_rate">>}
                               ,{<<"Request-URI">>, <<"sip_req_uri">>}
                               ,{<<"Signal-Bridge-To">>, <<"signal_bridge_to">>}
+                              ,{<<"SIP-Asserted-Identity-Send-Tel-URI">>, <<"sip_send_tel_paid">>}
+                              ,{<<"SIP-Identity-Passthru">>, <<"sip_identity_passthru">>}
                               ,{<<"SIP-Invite-Parameters">>, <<"sip_invite_params">>}
                               ,{<<"SIP-Invite-Contact-User">>, <<"sip_contact_user">>}
                               ,{<<"SIP-Invite-Domain">>, <<"sip_invite_domain">>}
@@ -317,6 +333,11 @@
                               ,{<<"Secure-ZRTP">>, <<"zrtp_secure_media">>}
                               ,{<<"Simplify-Loopback">>, <<"loopback_bowout_on_execute">>}
                               ,{<<"Proxy-Path">>, <<"sip_route_uri">>}
+                              ,{<<"Proxy-URI">>, <<"sip_proxy_uri">>}
+                              ,{<<"Proxy-Route">>, <<"sip_route_uri">>}
+                              ,{<<"Proxy-Bypass-Dynamic-Proxy">>, <<"bypass_proxy">>}
+                              ,{<<"Proxy-Tag">>, <<"sip_outbound_proxy_tag">>}
+                              ,{<<"Proxy-Zone">>, <<"sip_outbound_proxy_zone">>}
                               ,{<<"To-URI">>, <<"sip_to_uri">>}
                               ,{<<"To-User">>, <<"sip_to_user">>}
                               ,{<<"To-Realm">>, <<"sip_to_realm">>}
@@ -352,7 +373,9 @@
                               ,{<<"record_waste_resources">>, <<"record_waste_resources">>}
                               ,{<<"recording_follow_attxfer">>, <<"recording_follow_attxfer">>}
                               ,{<<"recording_follow_transfer">>, <<"recording_follow_transfer">>}
+                              ,{<<"Recording-Follow-Transfer">>, <<"recording_follow_transfer_instance">>}
                               ,{<<"sip_rh_X-Redirect-Server">>, <<"sip_rh_X-Redirect-Server">>}
+                              ,{<<"sip_h_X-Redirect-Server">>, <<"sip_h_X-Redirect-Server">>}
                               ,{<<"tts_engine">>, <<"tts_engine">>}
                               ,{<<"tts_voice">>, <<"tts_voice">>}
                               ,{<<"CDR-URI-From">>, <<"cdr_uri_from">>}
@@ -365,7 +388,19 @@
                               ,{<<"Call-Flag-NO-Flip">>, <<"no_flip">>}
                               ,{<<"Endpoint-Is-Ephemeral">>, <<"endpoint_is_ephemeral">>}
                               ,{<<"KAZOO-AOR">>, <<"sip_h_X-KAZOO-AOR">>}
+                              ,{<<"Application-UUID">>, <<"app_uuid">>}
+                              ,{<<"Application-UUID-Name">>, <<"app_uuid_name">>}
+                              ,{<<"Account-Cross-Boundary">>, <<"loopback_cross_boundary">>}
+                              ,{<<"RTP-Disable-Hold">>, <<"rtp_disable_hold">>}
+                              ,{<<"Call-Forward-Diversions">>, <<"sip_diversions">>}
+                              ,{<<"Presence-Aliases">>, <<"presence_aliases">>}
                               ]).
+
+%% Call and Channel Vars that have a special transform value instead of the
+%% standard binary value
+-define(SPECIAL_CHANNEL_TRANSFORMS, [{<<"Confirm-File">>, media}
+                                    ,{<<"Enable-T38-Gateway">>, {prepend, <<"t38_gateway">>}}
+                                    ]).
 
 -define(CALLER_PROFILE_VARS, [{<<"Caller-ID-Name">>, <<"caller_id_name">>}
                              ,{<<"Caller-ID-Number">>, <<"caller_id_number">>}
@@ -448,8 +483,8 @@
 -define(FS_EVENTS, [{'channel', ['CHANNEL_CREATE', 'CHANNEL_ANSWER', 'CHANNEL_DESTROY']}
                    ,{'bridge', ['CHANNEL_BRIDGE', 'CHANNEL_UNBRIDGE']}
                    ,{'media', ['DETECTED_TONE', 'DTMF','CHANNEL_PROGRESS','CHANNEL_PROGRESS_MEDIA']}
-                   ,{'record', ['RECORD_START', 'RECORD_STOP']}
-                   ,{'callflow', ['ROUTE_WINNER', 'CHANNEL_EXECUTE_COMPLETE', 'CHANNEL_METAFLOW']}
+                   ,{'record', ['RECORD_START', 'RECORD_STOP', 'RECORD_PAUSE', 'RECORD_RESUME', 'RECORD_MASK', 'RECORD_UNMASK']}
+                   ,{'callflow', ['ROUTE_WINNER', 'CHANNEL_EXECUTE_COMPLETE', 'CHANNEL_APP_EXECUTE_COMPLETE', 'CHANNEL_METAFLOW']}
                    ,{'presence', ['PRESENCE_IN']}
                    ,{'channel_full_update', ['CHANNEL_DATA','CHANNEL_SYNC','CALL_UPDATE']}
                    ,{'channel_update', ['CHANNEL_HOLD','CHANNEL_UNHOLD']}
@@ -459,7 +494,6 @@
                    ,{'transfer', ?FS_SOFIA_TRANSFER_EVENTS}
                    ,{'loopback', ['loopback::bowout', 'loopback::direct']}
                    ,{'cdr', ['KZ_CDR']}
-                   ,{'originate', ['KZ_ORIGINATE_START', 'KZ_ORIGINATE_EXECUTE', 'KZ_ORIGINATE_COMPLETE']}
                    ]).
 
 -define(FS_FETCH_SECTIONS, ['configuration'
@@ -478,6 +512,7 @@
                              ,'ecallmgr_fs_fetch_channels'
                              ,'ecallmgr_fs_fetch_directory'
                              ,'ecallmgr_fs_fetch_location'
+                             ,'ecallmgr_fs_fetch_limit'
                              ]).
 
 -define(DEFAULT_RESPONSE_CODE, <<"488">>).
@@ -516,60 +551,11 @@
 -define(SEPARATOR_SIMULTANEOUS, <<",">>).
 -define(SEPARATOR_SINGLE, <<"|">>).
 
--define(CONFERENCE_VARS, [<<"variable_conference_moderator">>
-                         ,<<"Floor">>
-                         ,<<"Video">>
-                         ,<<"See">>
-                         ,<<"Speak">>
-                         ,<<"Hear">>
-                         ,<<"Talking">>
-                         ,<<"Mute-Detect">>
-                         ,<<"Energy-Level">>
-                         ,<<"Member-ID">>
-                         ,<<"Member-Type">>
-                         ,<<"Member-Ghost">>
-                         ]).
-
--define(CONFERENCE_VAR_MAP, [{<<"variable_conference_moderator">>, {<<"Is-Moderator">>, fun kz_term:to_boolean/1}}
-                            ,{<<"Floor">>, fun kz_term:to_boolean/1}
-                            ,{<<"Video">>, fun kz_term:to_boolean/1}
-                            ,{<<"See">>, fun kz_term:to_boolean/1}
-                            ,{<<"Speak">>, fun kz_term:to_boolean/1}
-                            ,{<<"Hear">>, fun kz_term:to_boolean/1}
-                            ,{<<"Talking">>, fun kz_term:to_boolean/1}
-                            ,{<<"Mute-Detect">>, fun kz_term:to_boolean/1}
-                            ,{<<"Energy-Level">>, fun kz_term:to_integer/1}
-                            ,{<<"Current-Energy">>, fun kz_term:to_integer/1}
-                            ,{<<"Member-ID">>, fun kz_term:to_integer/1}
-                            ,{<<"Member-Ghost">>, fun kz_term:to_boolean/1}
-                            ]).
 
 -define(NODE_MODULES_KEY(R), [<<"configuration">>
                              ,R
                              ,<<"modules">>
                              ]).
-
--define(NODE_MODULES,
-        [<<"node">>
-        ,<<"monitor">>
-        ,<<"event_stream_sup">>
-        ,<<"fetch_sup">>
-        ,<<"notify">>
-        ,<<"resource">>
-        ]).
-
--define(EVENTSTREAM_MODS, ['ecallmgr_fs_channel_stream'
-                          ,'ecallmgr_fs_conference_stream'
-                          ,'ecallmgr_fs_event_stream_registered'
-                          ,'ecallmgr_call_event_publisher'
-                          ,'ecallmgr_conference_event_publisher'
-                          ,'ecallmgr_presence_event_publisher'
-                          ,'ecallmgr_fs_recordings'
-                          ,'ecallmgr_cdr_event_publisher'
-                          ]).
-
--define(HTTP_GET_PREFIX, "http_cache://").
-
 
 -type dialplan_callback() :: fun((dialplan_context()) -> 'ok' | {'ok', dialplan_context()}).
 -type dialplan_exit_fun() :: fun((dialplan_context()) -> 'ok').
@@ -583,28 +569,35 @@
 -type dialplan_context() :: #{amqp_worker => pid() %% AMQP Worker
                              ,authz_timeout => timeout()
                              ,authz_worker => kz_term:pid_ref()
-                             ,call_id => kz_term:ne_binary()
+                             ,basic => amqp_basic()
+                             ,blocked => boolean() %% whether call progress has been blocked
+                             ,call_id => kz_term:api_ne_binary()
                              ,callback => dialplan_callback()
                              ,channel => pid() %% AMQP Channel
-                             ,controller_q => kz_term:ne_binary() %% AMQP Queue of controller
                              ,control_p => pid() %% Ecallmgr control PID
                              ,control_q => kz_term:ne_binary() %% AMQP Control Queue
-                             ,core_uuid => kz_term:ne_binary() %% FS UUID
+                             ,controller_q => kz_term:ne_binary() %% AMQP Queue of controller
+                             ,core_uuid => kz_term:ne_binary() | atom() %% FS UUID
                              ,exit_fun => dialplan_exit_fun()
-                             ,fetch_id => kz_term:ne_binary()
-                             ,initial_ccvs => kz_json:object()
+                             ,fetch_id => kz_term:api_ne_binary()
                              ,init_fun => dialplan_init_fun()
+                             ,initial_ccvs => kz_json:object()
                              ,node => atom() %% FS Node
                              ,options => kz_term:proplist()
                              ,payload => kzd_fetch:data()
-                             ,start_result => {'ok', pid()} | {'error', any()}
-                             ,timer => dialplan_timers()
-                             ,timeout => non_neg_integer()
                              ,reply => dialplan_reply()
                              ,request => kapi_route:req()
+                             ,request_headers => kz_term:proplist()
                              ,route_resp_xml_fun => dialplan_xml_fun()
+                             ,routing => kz_term:ne_binary()
+                             ,section => atom()
+                             ,server_id => kz_term:api_ne_binary()
+                             ,start_result => {'ok', pid()} | {'error', any()}
+                             ,tag => kz_term:api_ne_binary() | atom()
+                             ,timeout => non_neg_integer()
+                             ,timer => dialplan_timers()
+                             ,version => atom()
                              ,winner => dialplan_winner()
-                             ,blocked => boolean()
                              }.
 
 -define(ECALLMGR_HRL, 'true').

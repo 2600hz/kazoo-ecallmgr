@@ -17,7 +17,6 @@
 		<filter name="Application" value="ring_ready" />
 		<filter name="Application" value="log" />
 		<filter name="Application" value="execute_extension" />
-		<filter name="Application" value="bridge" />
 	</filters>
 
 	<fields>
@@ -33,7 +32,7 @@
         <field name="Application-Response" type="first-of"
             value="variable_originate_failed_cause|variable_last_bridge_hangup_cause|variable_bridge_hangup_cause|variable_hangup_cause|Hangup-Cause|variable_originate_disposition|variable_endpoint_disposition|#NONE">
 	        <filters>
-	            <filter name="Application" type="include" compare="value" value="bridge" />
+                   <filter name="Application" type="include" compare="contains" value="bridge"/>
 	        </filters>
 
         </field>
@@ -45,6 +44,8 @@
 		<field name="hangup-cause" type="reference" />
         <field name="hangup-code" type="reference" />
 		<field name="Disposition" type="first-of" value="variable_endpoint_disposition|variable_originate_disposition" />
+		<field name="variable_playback_terminator_used" as="DTMF-Digit" />
+		<field name="variable_media_group_id" as="Group-ID" />
 
 		<field name="debug-call" type="reference" />
 	</fields>

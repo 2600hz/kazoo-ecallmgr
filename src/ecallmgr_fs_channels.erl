@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2013-2021, 2600Hz
+%%% @copyright (C) 2013-2023, 2600Hz
 %%% @doc Track the FreeSWITCH channel information, and provide accessors
 %%% @author James Aimonetti
 %%% @author Karl Anderson
@@ -39,6 +39,13 @@
 
 -export([handle_query_auth_id/2]).
 -export([handle_query_user_channels/2]).
+-export([handle_query_endpoint_channels/2
+        ,query_endpoint_channels/1, query_endpoint_channels/2, query_endpoint_channels/3
+        ,count_endpoint_channels/1, count_endpoint_channels/2, count_endpoint_channels/3
+        ]).
+-export([handle_count/2
+        ,count/1, count/2, count/3, count/4
+        ]).
 -export([handle_query_account_channels/2]).
 -export([handle_query_channels/2]).
 -export([handle_channel_status/2]).
@@ -61,6 +68,8 @@
 
 -include("ecallmgr.hrl").
 
+-elvis([{elvis_style, no_debug_call, disable}]).
+
 -define(SERVER, ?MODULE).
 
 -define(RESPONDERS, [{{?MODULE, 'handle_query_auth_id'}
@@ -77,6 +86,12 @@
                      }
                     ,{{?MODULE, 'handle_channel_status'}
                      ,[{<<"channel">>, <<"channel_status_req">>}]
+                     }
+                    ,{{?MODULE, 'handle_query_endpoint_channels'}
+                     ,[{<<"channel">>, <<"query_endpoint_channels_req">>}]
+                     }
+                    ,{{?MODULE, 'handle_count'}
+                     ,[{<<"channel">>, <<"count_req">>}]
                      }
                     ]).
 -define(BINDINGS, [{'call', [{'restrict_to', ['status_req']}
@@ -354,8 +369,9 @@ handle_query_channels(JObj, _Props) ->
         kz_json:is_true(<<"Active-Only">>, JObj, 'false')
     of
         'true' ->
-            lager:debug("not sending query_channels resp due to active-only=true");
+            lager:debug("no channels found, not sending query_channels resp due to active-only=true");
         'false' ->
+            lager:debug("found ~B channels, sending reply", [length(kz_json:get_keys(Channels))]),
             Resp = [{<<"Channels">>, Channels}
                    ,{<<"Msg-ID">>, kz_api:msg_id(JObj)}
                    | kz_api:default_headers(?APP_NAME, ?APP_VERSION)
@@ -368,8 +384,9 @@ handle_channel_status(JObj, _Props) ->
     'true' = kapi_call:channel_status_req_v(JObj),
     _ = kz_log:put_callid(JObj),
     CallId = kz_api:call_id(JObj),
+    ChannelRecord = kz_json:is_true(<<"Channel-Record">>, JObj),
     lager:debug("channel status request received"),
-    case api_status(CallId) of
+    case api_status(CallId, ChannelRecord) of
         {'error', _Reason} ->
             maybe_send_empty_channel_resp(CallId, JObj);
         {'ok', Status} ->
@@ -378,34 +395,66 @@ handle_channel_status(JObj, _Props) ->
             kapi_call:publish_channel_status_resp(kz_api:server_id(JObj), Resp)
     end.
 
--spec api_status(kz_term:ne_binary()) -> {'ok', kz_term:proplist()} | {'error', _}.
+-type api_status_node_info() :: {kz_term:ne_binary(), kz_term:ne_binary()}.
+
+-spec api_status(kz_term:ne_binary()) ->
+          {'ok', kz_term:proplist()} |
+          {'error', 'not_found'}.
 api_status(CallId) ->
+    api_status(CallId, 'false').
+
+-spec api_status(kz_term:ne_binary(), boolean()) ->
+          {'ok', kz_term:proplist()} |
+          {'error', 'not_found'}.
+api_status(CallId, ChannelRecord) ->
     case ecallmgr_fs_channel:fetch(CallId, 'api') of
         {'error', _} = Error -> Error;
-        {'ok', Channel} ->
-            Node = kz_json:get_binary_value(<<"Media-Node">>, Channel),
-            Hostname = case binary:split(Node, <<"@">>) of
-                           [_, Host] -> Host;
-                           Other -> Other
-                       end,
-            Profile = kz_json:get_binary_value(<<"profile">>, Channel),
-            lager:debug("channel is on ~s", [Hostname]),
-            Resp = props:filter_undefined(
-                     [{<<"Call-ID">>, CallId}
-                     ,{<<"Status">>, <<"active">>}
-                     ,{<<"Switch-Hostname">>, Hostname}
-                     ,{<<"Switch-Nodename">>, kz_term:to_binary(Node)}
-                     ,{<<"Switch-URL">>, kz_json:get_ne_binary_value(<<"Switch-URL">>, Channel, ecallmgr_fs_nodes:sip_url(Node, Profile))}
-                     ,{<<"Realm">>, kz_json:get_value(<<"Realm">>, Channel)}
-                     ,{<<"Username">>, kz_json:get_value(<<"Username">>, Channel)}
-                     ,{<<"Custom-Channel-Vars">>, kz_json:from_list(ecallmgr_fs_channel:channel_ccvs(Channel))}
-                     ,{<<"Custom-Application-Vars">>, kz_json:from_list(ecallmgr_fs_channel:channel_cavs(Channel))}
-                     ,{<<"Custom-SIP-Headers">>, kz_json:from_list(ecallmgr_fs_channel:channel_cshs(Channel))}
-                     | [{Key, kz_json:get_ne_value(Key, Channel)} || Key <- kapi_call:channel_status_extended_headers()]
-                     ]
-                    ),
-            {'ok', Resp ++ kz_api:default_headers(?APP_NAME, ?APP_VERSION)}
+        {'ok', Channel} -> api_status_return(CallId, ChannelRecord, Channel)
     end.
+
+-spec api_status_return(kz_term:ne_binary(), boolean(), kz_json:object()) -> {'ok', kz_term:proplist()}.
+api_status_return(CallId, 'true', Channel) ->
+    api_status_log_node(Channel),
+    Resp = [{<<"Call-ID">>, CallId}
+           ,{<<"Status">>, <<"active">>}
+           ,{<<"Channel-Record">>, Channel}
+           ],
+    {'ok', Resp ++ kz_api:default_headers(?APP_NAME, ?APP_VERSION)};
+api_status_return(CallId, 'false', Channel) ->
+    {Node, Hostname} = api_status_node(Channel),
+    lager:debug("channel is on ~s", [Hostname]),
+    Profile = kz_json:get_binary_value(<<"Profile">>, Channel),
+    Resp = props:filter_undefined(
+             [{<<"Call-ID">>, CallId}
+             ,{<<"Status">>, <<"active">>}
+             ,{<<"Switch-Hostname">>, Hostname}
+             ,{<<"Switch-Nodename">>, kz_term:to_binary(Node)}
+             ,{<<"Switch-URL">>, kz_json:get_ne_binary_value(<<"Switch-URL">>, Channel, ecallmgr_fs_nodes:sip_url(Node, Profile))}
+             ,{<<"Realm">>, kz_json:get_value(<<"Realm">>, Channel)}
+             ,{<<"Username">>, kz_json:get_value(<<"Username">>, Channel)}
+             ,{<<"Custom-Channel-Vars">>, kz_json:from_list(ecallmgr_fs_channel:channel_ccvs(Channel))}
+             ,{<<"Custom-Application-Vars">>, kz_json:from_list(ecallmgr_fs_channel:channel_cavs(Channel))}
+             ,{<<"Custom-SIP-Headers">>, kz_json:from_list(ecallmgr_fs_channel:channel_cshs(Channel))}
+             ,{<<"Custom-AUTH-Headers">>, kz_json:from_list(ecallmgr_fs_channel:channel_cahs(Channel))}
+             | [{Key, kz_json:get_ne_value(Key, Channel)} || Key <- kapi_call:channel_status_extended_headers()]
+             ]
+            ),
+    {'ok', Resp ++ kz_api:default_headers(?APP_NAME, ?APP_VERSION)}.
+
+-spec api_status_node(kz_json:object()) -> api_status_node_info().
+api_status_node(Channel) ->
+    Node = kz_json:get_binary_value(<<"Media-Node">>, Channel),
+    Hostname = case binary:split(Node, <<"@">>) of
+                   [_, Host] -> Host;
+                   Other -> Other
+               end,
+    {Node, Hostname}.
+
+-spec api_status_log_node(kz_json:object() | api_status_node_info()) -> 'ok'.
+api_status_log_node({_Node, Hostname}) ->
+    lager:debug("channel is on ~s", [Hostname]);
+api_status_log_node(Channel) ->
+    api_status_log_node(api_status_node(Channel)).
 
 -spec maybe_send_empty_channel_resp(kz_term:ne_binary(), kz_json:object()) -> 'ok'.
 maybe_send_empty_channel_resp(CallId, JObj) ->
@@ -424,6 +473,79 @@ send_empty_channel_resp(CallId, JObj) ->
            ],
     lager:debug("sending back empty channel data to ~s", [kz_api:server_id(JObj)]),
     kapi_call:publish_channel_status_resp(kz_api:server_id(JObj), Resp).
+
+-spec handle_query_endpoint_channels(kz_json:object(), kz_term:proplist()) -> 'ok'.
+handle_query_endpoint_channels(JObj, _Props) ->
+    'true' = kapi_call:query_endpoint_channels_req_v(JObj),
+    UUIDs = query_endpoint_channels(JObj),
+    CountOnly = kz_json:is_true(<<"Count-Only">>, JObj),
+    Resp = [query_endpoint_channels_reply(CountOnly, UUIDs)
+           ,{<<"Msg-ID">>, kz_api:msg_id(JObj)}
+           | kz_api:default_headers(?APP_NAME, ?APP_VERSION)
+           ],
+    ServerId = kz_api:server_id(JObj),
+    lager:debug("sending back endpoint query (~B) result to ~s", [length(UUIDs), ServerId]),
+    kapi_call:publish_query_endpoint_channels_resp(ServerId, Resp).
+
+query_endpoint_channels_reply('true', UUIDs) -> {<<"Count">>, length(UUIDs)};
+query_endpoint_channels_reply('false', UUIDs) -> {<<"Channels">>, UUIDs}.
+
+
+-spec count_endpoint_channels(kz_json:object()) -> integer().
+count_endpoint_channels(JObj) ->
+    length(query_endpoint_channels(JObj)).
+
+-spec count_endpoint_channels(kz_term:ne_binary(), kz_term:ne_binary()) -> integer().
+count_endpoint_channels(AccountId, EndpointId) ->
+    length(query_endpoint_channels(AccountId, EndpointId)).
+
+-spec count_endpoint_channels(kz_term:ne_binary(), kz_term:ne_binary(), kz_term:api_ne_binary()) -> integer().
+count_endpoint_channels(AccountId, EndpointId, Direction) ->
+    length(query_endpoint_channels(AccountId, EndpointId, Direction)).
+
+-spec query_endpoint_channels(kz_json:object()) -> kz_term:ne_binaries().
+query_endpoint_channels(JObj) ->
+    AccountId = kz_json:get_ne_binary_value(<<"Account-ID">>, JObj),
+    EndpointId = kz_json:get_ne_binary_value(<<"Endpoint-ID">>, JObj),
+    Direction = kz_json:get_ne_binary_value(<<"Direction">>, JObj),
+    query_endpoint_channels(AccountId, EndpointId, Direction).
+
+-spec query_endpoint_channels(kz_term:ne_binary(), kz_term:ne_binary()) -> kz_term:ne_binaries().
+query_endpoint_channels(AccountId, EndpointId) ->
+    query_endpoint_channels(AccountId, EndpointId, 'undefined').
+
+-spec query_endpoint_channels(kz_term:ne_binary(), kz_term:ne_binary(), kz_term:api_ne_binary()) -> kz_term:ne_binaries().
+query_endpoint_channels(AccountId, EndpointId, Direction) ->
+    MatchSpec = query_endpoint_channels_match_spec(AccountId, EndpointId, Direction),
+    ets:select(?CHANNELS_TBL, MatchSpec).
+
+query_endpoint_channels_match_spec(AccountId, EndpointId, 'undefined') ->
+    [{#channel{uuid = '$1', account_id = '$2', authorizing_id = '$3', owner_id = '$4', _ = '_'}
+     ,[{'andalso',
+        {'=:=', '$2', {'const', AccountId}},
+        {'orelse',
+         {'=:=', '$3', {'const', EndpointId}}
+        ,{'=:=', '$4', {'const', EndpointId}}
+        }
+       }
+      ]
+     ,['$1']}
+    ];
+query_endpoint_channels_match_spec(AccountId, EndpointId, Direction) ->
+    [{#channel{uuid = '$1', account_id = '$2', authorizing_id = '$3', owner_id = '$4', direction = '$5', _ = '_'}
+     ,[{'andalso',
+        {'andalso',
+         {'=:=', '$2', {'const', AccountId}},
+         {'orelse',
+          {'=:=', '$3', {'const', EndpointId}}
+         ,{'=:=', '$4', {'const', EndpointId}}
+         }
+        }
+       ,{'=:=', '$5', {'const', Direction}}
+       }
+      ]
+     ,['$1']}
+    ].
 
 %%%=============================================================================
 %%% gen_server callbacks
@@ -445,6 +567,7 @@ init([]) ->
                                ,{'read_concurrency', 'true'}
                                ,{'write_concurrency', 'true'}
                                ]),
+    pg:join({kz_config:zone(), 'channel_cache'}, self()),
     {'ok', #state{max_channel_cleanup_ref=start_cleanup_ref()}}.
 
 -define(CLEANUP_TIMEOUT
@@ -472,6 +595,12 @@ handle_call({'new_channel', #channel{uuid=UUID}=Channel}, _, State) ->
 handle_call({'new_or_update', #channel{}=Channel}, _, State) ->
     Result = ets:insert(?CHANNELS_TBL, Channel),
     {'reply', Result, State};
+handle_call({'count', {AccountId, OwnerId, DeviceId, Direction}}, From, State) ->
+    _ = kz_process:spawn(fun() -> gen_server:reply(From, count(AccountId, OwnerId, DeviceId, Direction)) end),
+    {'noreply', State};
+handle_call({'count', Args}, From, State) when is_map(Args) ->
+    _ = kz_process:spawn(fun() -> gen_server:reply(From, count(Args)) end),
+    {'noreply', State};
 handle_call(_, _, State) ->
     {'reply', {'error', 'not_implemented'}, State}.
 
@@ -624,7 +753,7 @@ has_channels_for_owner(OwnerId) ->
                           ,_ = '_'
                           }
                  ,[]
-                 ,[{'=:=', '$1', {const, OwnerId}}]
+                 ,[{'=:=', '$1', {'const', OwnerId}}]
                  }
                 ],
     Count = ets:select_count(?CHANNELS_TBL, MatchSpec),
@@ -651,6 +780,7 @@ find_by_authorizing_id([AuthId|AuthIds], Acc) ->
 
 -spec find_by_user_realm(kz_term:api_binary() | kz_term:ne_binaries(), kz_term:ne_binary()) -> [] | kz_term:proplist().
 find_by_user_realm('undefined', Realm) ->
+    lager:debug("search channels in realm ~s", [Realm]),
     Pattern = #channel{realm=kz_term:to_lower_binary(Realm)
                       ,_='_'},
     case ets:match_object(?CHANNELS_TBL, Pattern) of
@@ -661,7 +791,8 @@ find_by_user_realm('undefined', Realm) ->
             ]
     end;
 find_by_user_realm(<<?CALL_PARK_FEATURE, _/binary>>=Username, Realm) ->
-    Pattern = #channel{destination=kz_term:to_lower_binary(Username)
+    lager:debug("search channels for call park feature in realm ~s", [Realm]),
+    Pattern = #channel{destination=Username
                       ,realm=kz_term:to_lower_binary(Realm)
                       ,other_leg='undefined'
                       ,_='_'},
@@ -673,6 +804,7 @@ find_by_user_realm(<<?CALL_PARK_FEATURE, _/binary>>=Username, Realm) ->
             ]
     end;
 find_by_user_realm(Usernames, Realm) when is_list(Usernames) ->
+    lager:debug("search channels for users ~s in realm ~s", [kz_binary:join(Usernames), Realm]),
     ETSUsernames = build_matchspec_ors(Usernames),
     MatchSpec = [{#channel{username='$1'
                           ,realm=kz_term:to_lower_binary(Realm)
@@ -688,7 +820,8 @@ find_by_user_realm(Usernames, Realm) when is_list(Usernames) ->
             ]
     end;
 find_by_user_realm(Username, Realm) ->
-    Pattern = #channel{username=kz_term:to_lower_binary(Username)
+    lager:debug("search channels for user ~s in realm ~s", [Username, Realm]),
+    Pattern = #channel{username=Username
                       ,realm=kz_term:to_lower_binary(Realm)
                       ,_='_'},
     case ets:match_object(?CHANNELS_TBL, Pattern) of
@@ -703,6 +836,7 @@ find_by_user_realm(Username, Realm) ->
           {'ok', kz_json:objects()} |
           {'error', 'not_found'}.
 find_account_channels(<<"all">>) ->
+    lager:debug("search channels for all accounts"),
     case ets:match_object(?CHANNELS_TBL, #channel{_='_'}) of
         [] -> {'error', 'not_found'};
         Channels ->
@@ -711,6 +845,7 @@ find_account_channels(<<"all">>) ->
                    ]}
     end;
 find_account_channels(AccountId) ->
+    lager:debug("search channels for account ~s", [AccountId]),
     case ets:match_object(?CHANNELS_TBL, #channel{account_id=AccountId, _='_'}) of
         [] -> {'error', 'not_found'};
         Channels ->
@@ -728,15 +863,21 @@ build_matchspec_ors(Usernames) ->
 
 -spec build_matchspec_ors_fold(kz_term:ne_binary(), tuple() | 'false') -> tuple().
 build_matchspec_ors_fold(Username, Acc) ->
-    {'or', {'=:=', '$1', kz_term:to_lower_binary(Username)}, Acc}.
+    {'or', {'=:=', '$1', Username}, Acc}.
+
+log_fields(Fields)
+  when is_list(Fields) -> kz_binary:join(Fields);
+log_fields(Field) -> Field.
 
 -spec query_channels(kz_term:ne_binaries(), kz_term:api_binary()) -> kz_json:object().
 query_channels(Fields, 'undefined') ->
+    lager:debug("query all channels returning fields : ~s", [log_fields(Fields)]),
     query_channels(ets:match_object(?CHANNELS_TBL, #channel{_='_'}, 1)
                   ,Fields
                   ,kz_json:new()
                   );
 query_channels(Fields, CallId) ->
+    lager:debug("query channel ~s returning fields : ~s", [CallId, log_fields(Fields)]),
     query_channels(ets:match_object(?CHANNELS_TBL, #channel{uuid=CallId, _='_'}, 1)
                   ,Fields
                   ,kz_json:new()
@@ -746,14 +887,18 @@ query_channels(Fields, CallId) ->
           kz_json:object().
 query_channels('$end_of_table', _, Channels) -> Channels;
 query_channels({[#channel{uuid=CallId}=Channel], Continuation}
-              ,<<"all">>, Channels) ->
+              ,<<"all">>
+              ,Channels
+              ) ->
     JObj = ecallmgr_fs_channel:to_api_json(Channel),
     query_channels(ets:match_object(Continuation)
                   ,<<"all">>
                   ,kz_json:set_value(CallId, JObj, Channels)
                   );
 query_channels({[#channel{uuid=CallId}=Channel], Continuation}
-              ,Fields, Channels) ->
+              ,Fields
+              ,Channels
+              ) ->
     ChannelProps = ecallmgr_fs_channel:to_api_props(Channel),
     JObj = kz_json:from_list(
              [{Field, props:get_value(Field, ChannelProps)}
@@ -785,8 +930,10 @@ print_summary({[#channel{uuid=UUID
                         ,destination=Destination
                         ,account_id=AccountId
                         }]
-              ,Continuation}
-             ,Count) ->
+              ,Continuation
+              }
+             ,Count
+             ) ->
     io:format(?SUMMARY_HEADER
              ,[UUID, Node, Direction, Destination, AccountId]
              ),
@@ -800,8 +947,10 @@ print_details(Match) ->
 print_details('$end_of_table', Count) ->
     io:format("~nFound ~p channels~n", [Count]);
 print_details({[#channel{}=Channel]
-              ,Continuation}
-             ,Count) ->
+              ,Continuation
+              }
+             ,Count
+             ) ->
     io:format("~n"),
     _ = [io:format("~-19s: ~s~n", [K, kz_term:to_binary(V)])
          || {K, V} <- ecallmgr_fs_channel:to_props(Channel),
@@ -813,7 +962,8 @@ print_details({[#channel{}=Channel]
 handle_channel_reconnected(#channel{handling_locally='true'
                                    ,uuid=_UUID
                                    }=Channel
-                          ,'true') ->
+                          ,'true'
+                          ) ->
     lager:debug("channel ~s connected, publishing update", [_UUID]),
     publish_channel_connection_event(Channel, [{<<"Event-Name">>, <<"CHANNEL_CONNECTED">>}]);
 handle_channel_reconnected(_Channel, _ShouldPublish) ->
@@ -837,7 +987,8 @@ publish_channel_connection_event(#channel{uuid=UUID
                                          ,from=From
                                          ,to=To
                                          }=Channel
-                                ,ChannelSpecific) ->
+                                ,ChannelSpecific
+                                ) ->
     Event = [{<<"Timestamp">>, kz_time:now_s()}
             ,{<<"Call-ID">>, UUID}
             ,{<<"Call-Direction">>, Direction}
@@ -1004,3 +1155,146 @@ channel_match_for_delete(UUID, Node) ->
       ],
       ['true']
      }].
+
+-spec handle_count(kz_json:object(), kz_term:proplist()) -> 'ok'.
+handle_count(JObj, _Props) ->
+    'true' = kapi_call:count_req_v(JObj),
+    Count = count(JObj),
+    Resp = [{<<"Count">>, kz_json:from_map(Count)}
+           ,{<<"Msg-ID">>, kz_api:msg_id(JObj)}
+           | kz_api:default_headers(?APP_NAME, ?APP_VERSION)
+           ],
+    ServerId = kz_api:server_id(JObj),
+    lager:debug("sending back count result to ~s", [ServerId]),
+    kapi_call:publish_count_resp(ServerId, Resp).
+
+
+-spec count(kz_json:object() | map()) -> map().
+count(Map) when is_map(Map) ->
+    AccountId = maps:get('account', Map),
+    Direction = maps:get('direction', Map, 'undefined'),
+    DeviceId = maps:get('device', Map, 'undefined'),
+    EndpointId = maps:get('endpoint', Map,  'undefined'),
+    OwnerId = maps:get('owner', Map,  'undefined'),
+    UserId = maps:get('user', Map,  'undefined'),
+    Routines = [{'account', AccountId, Direction, fun count_by_account_match_spec/2}
+               ,{'device', {AccountId, DeviceId}, Direction, fun count_by_device_match_spec/2}
+               ,{'endpoint', {AccountId, EndpointId}, Direction, fun count_by_endpoint_match_spec/2}
+               ,{'owner', {AccountId, OwnerId}, Direction, fun count_by_owner_match_spec/2}
+               ,{'user', {AccountId, UserId}, Direction, fun count_by_owner_match_spec/2}
+               ],
+    maps:from_list(lists:filtermap(fun count_fun/1, Routines));
+count(JObj) ->
+    Props = [{'account', kz_json:get_ne_binary_value(<<"Account-ID">>, JObj)}
+            ,{'device', kz_json:get_ne_binary_value(<<"Device-ID">>, JObj)}
+            ,{'endpoint', kz_json:get_ne_binary_value(<<"Endpoint-ID">>, JObj)}
+            ,{'owner', kz_json:get_ne_binary_value(<<"Owner-ID">>, JObj)}
+            ,{'user', kz_json:get_ne_binary_value(<<"User-ID">>, JObj)}
+            ,{'direction', kz_json:get_ne_binary_value(<<"Direction">>, JObj)}
+            ],
+    count(maps:from_list(lists:filter(fun({_, V}) -> V =/= 'undefined' end, Props))).
+
+-spec count(kz_term:ne_binary(), kz_term:ne_binary()) -> map().
+count(AccountId, EndpointId) ->
+    count(#{account => AccountId, endpoint => EndpointId}).
+
+-spec count(kz_term:ne_binary(), kz_term:ne_binary(), kz_term:ne_binary()) -> map().
+count(AccountId, OwnerId, DeviceId) ->
+    count(#{account => AccountId, owner => OwnerId, device => DeviceId}).
+
+-spec count(kz_term:ne_binary(), kz_term:api_ne_binary(), kz_term:api_ne_binary(), kz_term:api_ne_binary()) -> map().
+count(AccountId, OwnerId, DeviceId, Direction) ->
+    count(#{account => AccountId, owner => OwnerId, device => DeviceId, direction => Direction}).
+
+count_fun({_, 'undefined', _, _}) -> 'false';
+count_fun({_, {_, 'undefined'}, _, _}) -> 'false';
+count_fun({Header, Id, Direction, Fun}) ->
+    MatchSpec = Fun(Id, Direction),
+    {'true', {Header, length(ets:select(?CHANNELS_TBL, MatchSpec))}}.
+
+count_by_account_match_spec(AccountId, 'undefined') ->
+    [{#channel{uuid = '$1', account_id = '$2', _ = '_'}
+     ,[{'=:=', '$2', {'const', AccountId}}]
+     ,['$1']}
+    ];
+count_by_account_match_spec(AccountId, Direction) ->
+    [{#channel{uuid = '$1', account_id = '$2', direction = '$3', _ = '_'}
+     ,[{'andalso',
+        {'=:=', '$2', {'const', AccountId}},
+        {'=:=', '$3', {'const', Direction}}
+       }
+      ]
+     ,['$1']}
+    ].
+
+count_by_owner_match_spec({AccountId, OwnerId}, 'undefined') ->
+    [{#channel{uuid = '$1', account_id = '$2', owner_id = '$3', _ = '_'}
+     ,[{'andalso',
+        {'=:=', '$2', {'const', AccountId}},
+        {'=:=', '$3', {'const', OwnerId}}
+       }
+      ]
+     ,['$1']}
+    ];
+count_by_owner_match_spec({AccountId, OwnerId}, Direction) ->
+    [{#channel{uuid = '$1', account_id = '$2', owner_id = '$3', direction = '$4', _ = '_'}
+     ,[{'andalso',
+        {'andalso',
+         {'=:=', '$2', {'const', AccountId}},
+         {'=:=', '$3', {'const', OwnerId}}
+        }
+       ,{'=:=', '$4', {'const', Direction}}
+       }
+      ]
+     ,['$1']}
+    ].
+
+count_by_device_match_spec({AccountId, DeviceId}, 'undefined') ->
+    [{#channel{uuid = '$1', account_id = '$2', authorizing_id = '$3', _ = '_'}
+     ,[{'andalso',
+        {'=:=', '$2', {'const', AccountId}},
+        {'=:=', '$3', {'const', DeviceId}}
+       }
+      ]
+     ,['$1']}
+    ];
+count_by_device_match_spec({AccountId, DeviceId}, Direction) ->
+    [{#channel{uuid = '$1', account_id = '$2', authorizing_id = '$3', direction = '$4', _ = '_'}
+     ,[{'andalso',
+        {'andalso',
+         {'=:=', '$2', {'const', AccountId}},
+         {'=:=', '$3', {'const', DeviceId}}
+        }
+       ,{'=:=', '$4', {'const', Direction}}
+       }
+      ]
+     ,['$1']}
+    ].
+
+count_by_endpoint_match_spec({AccountId, EndpointId}, 'undefined') ->
+    [{#channel{uuid = '$1', account_id = '$2', authorizing_id = '$3', owner_id = '$4', _ = '_'}
+     ,[{'andalso',
+        {'=:=', '$2', {'const', AccountId}},
+        {'orelse',
+         {'=:=', '$3', {'const', EndpointId}}
+        ,{'=:=', '$4', {'const', EndpointId}}
+        }
+       }
+      ]
+     ,['$1']}
+    ];
+count_by_endpoint_match_spec({AccountId, EndpointId}, Direction) ->
+    [{#channel{uuid = '$1', account_id = '$2', authorizing_id = '$3', owner_id = '$4', direction = '$5', _ = '_'}
+     ,[{'andalso',
+        {'andalso',
+         {'=:=', '$2', {'const', AccountId}},
+         {'orelse',
+          {'=:=', '$3', {'const', EndpointId}}
+         ,{'=:=', '$4', {'const', EndpointId}}
+         }
+        }
+       ,{'=:=', '$5', {'const', Direction}}
+       }
+      ]
+     ,['$1']}
+    ].

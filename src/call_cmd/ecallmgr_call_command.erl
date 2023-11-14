@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2021, 2600Hz
+%%% @copyright (C) 2010-2023, 2600Hz
 %%% @doc Execute call commands
 %%% @author James Aimonetti
 %%% @author Karl Anderson
@@ -38,7 +38,7 @@ exec_cmd(Node, UUID, JObj, UUID) ->
     AnonymizedJObj = enforce_privacy(Node, UUID, JObj),
     case get_fs_app(Node, UUID, AnonymizedJObj, App) of
         {'error', Msg} -> throw({'msg', Msg});
-        {'return', error} -> lager:info("app ~s cmd errored", [App]);
+        {'return', 'error'} -> lager:info("app ~s cmd errored", [App]);
         {'return', _Result} -> lager:info("app ~s cmd return ~p", [App, _Result]);
         {_AppName, 'noop'} -> 'ok';
         {AppName, AppData} ->
@@ -441,9 +441,9 @@ get_fs_app(_Node, UUID, JObj, <<"set">>) ->
             Command = get_set_command(JObj),
 
             props:filter_undefined(
-              [{Command, maybe_multi_set(UUID, ChannelVars)}
-              ,{Command, maybe_multi_set(UUID, [{?CAV(K), V} || {K, V} <- AppVars])}
-              ,{Command, maybe_multi_set(UUID, [{?JSON_CAV(K), V} || {K, V} <- JSONAppVars])}
+              [{Command, maybe_no_channel_data_scope(maybe_multi_set(UUID, ChannelVars))}
+              ,{Command, maybe_no_channel_data_scope(maybe_multi_set(UUID, [{?CAV(K), V} || {K, V} <- AppVars]))}
+              ,{Command, maybe_no_channel_data_scope(maybe_multi_set(UUID, [{?JSON_CAV(K), V} || {K, V} <- JSONAppVars]))}
                %% CallVars are always exported
               ,{<<"kz_export_encoded">>, maybe_multi_set(UUID, CallVars)}
               ])
@@ -458,14 +458,10 @@ get_fs_app(_Node, _UUID, JObj, <<"respond">>) ->
             {<<"respond">>, Response}
     end;
 
-get_fs_app(Node, UUID, JObj, <<"redirect">>) ->
+get_fs_app(_Node, UUID, JObj, <<"redirect">>) ->
     case kapi_dialplan:redirect_v(JObj) of
         'false' -> {'error', <<"redirect failed to execute as JObj did not validate">>};
-        'true' ->
-            RedirectServer = lookup_redirect_server(JObj) ,
-            maybe_add_redirect_header(Node, UUID, RedirectServer),
-
-            {<<"redirect">>, kz_json:get_value(<<"Redirect-Contact">>, JObj, <<>>)}
+        'true' -> redirect_app(UUID, JObj)
     end;
 
 get_fs_app(Node, UUID, JObj, <<"conference">>) ->
@@ -562,31 +558,6 @@ maybe_multi_set(_UUID, []) -> 'undefined';
 maybe_multi_set(UUID, Vars) -> ecallmgr_util:multi_set_args(UUID, Vars).
 
 %%------------------------------------------------------------------------------
-%% @doc Redirect command helpers
-%% @end
-%%------------------------------------------------------------------------------
-
--spec lookup_redirect_server(kz_json:object()) -> kz_term:api_binary().
-lookup_redirect_server(JObj) ->
-    case kz_json:get_value(<<"Redirect-Server">>, JObj) of
-        'undefined' -> fixup_redirect_node(kz_json:get_value(<<"Redirect-Node">>, JObj));
-        Server -> Server
-    end.
-
--spec fixup_redirect_node(kz_term:api_binary()) -> kz_term:api_binary().
-fixup_redirect_node('undefined') ->
-    'undefined';
-fixup_redirect_node(Node) ->
-    SipUrl = ecallmgr_fs_node:sip_url(Node),
-    binary:replace(SipUrl, <<"mod_sofia@">>, <<>>).
-
--spec maybe_add_redirect_header(atom(), kz_term:ne_binary(), kz_term:api_binary()) -> 'ok'.
-maybe_add_redirect_header(_Node, _UUID, 'undefined') -> 'ok';
-maybe_add_redirect_header(Node, UUID, RedirectServer) ->
-    lager:debug("set X-Redirect-Server to ~s", [RedirectServer]),
-    ecallmgr_fs_command:set(Node, UUID, [{<<"sip_rh_X-Redirect-Server">>, RedirectServer}]).
-
-%%------------------------------------------------------------------------------
 %% @doc Eavesdrop command helpers
 %% @end
 %%------------------------------------------------------------------------------
@@ -649,13 +620,8 @@ prepare_app(Target, _Node, Target, _JObj) ->
     {'error', <<"intercept target is the same as the caller">>};
 prepare_app(Target, Node, UUID, JObj) ->
     case ecallmgr_fs_channel:fetch(Target, 'record') of
-        {'ok', #channel{node=Node
-                       ,answered=IsAnswered
-                       ,interaction_id=CDR
-                       }} ->
+        {'ok', #channel{node=Node}} ->
             lager:debug("target ~s is on same node(~s) as us", [Target, Node]),
-            _ = ecallmgr_fs_command:set(Node, UUID, [{<<?CALL_INTERACTION_ID>>, CDR}]),
-            maybe_answer(Node, UUID, IsAnswered),
             {'execute', Node, UUID, JObj, Target};
         {'ok', #channel{node=OtherNode}} ->
             lager:debug("target ~s is on other node (~s), not ~s", [Target, OtherNode, Node]),
@@ -720,11 +686,6 @@ prepare_app_via_amqp(Node, UUID, TargetCallId, Resp) ->
     TargetNode = kz_json:get_value(<<"Switch-Nodename">>, Resp),
     lager:debug("call ~s is on ~s", [TargetCallId, TargetNode]),
     prepare_app_maybe_move_remote(Node, UUID, TargetCallId, kz_term:to_atom(TargetNode, 'true'), Resp).
-
--spec maybe_answer(atom(), kz_term:ne_binary(), boolean()) -> 'ok'.
-maybe_answer(_Node, _UUID, 'true') -> 'ok';
-maybe_answer(Node, UUID, 'false') ->
-    ecallmgr_util:send_cmd(Node, UUID, <<"answer">>, <<>>).
 
 -spec prepare_app_maybe_move(atom(), kz_term:ne_binary(), kz_term:ne_binary(), atom()) ->
           {kz_term:ne_binary(), kz_term:ne_binary()} |
@@ -823,32 +784,14 @@ exports_from_api(JObj, Ks) ->
 
 -spec get_eavesdrop_app(atom(), kz_term:ne_binary(), kz_json:object(), kz_term:ne_binary()) ->
           {kz_term:ne_binary(), kz_term:ne_binary()}.
-get_eavesdrop_app(Node, UUID, JObj, Target) ->
-    ExportsApi = exports_from_api(JObj, [<<"Park-After-Pickup">>
-                                        ,<<"Continue-On-Fail">>
-                                        ,<<"Continue-On-Cancel">>
-                                        ]),
+get_eavesdrop_app(_Node, UUID, JObj, Target) ->
+    Args = get_eavesdrop_app_args(UUID, JObj),
+    {<<"eavesdrop">>, list_to_binary([Args , Target])}.
 
-    SetApi = [{<<"Enable-DTMF">>, 'undefined', <<"eavesdrop_enable_dtmf">>}
-             ],
-
-    Exports = [{<<"failure_causes">>, <<"NORMAL_CLEARING,ORIGINATOR_CANCEL,CRASH">>}
-              | build_set_args(ExportsApi, JObj)
-              ],
-
-    ControlUsurp = [{<<"Call-ID">>, Target}
-                   ,{<<"Reason">>, <<"redirect">>}
-                   ,{<<"Fetch-ID">>, kz_binary:rand_hex(4)}
-                   | kz_api:default_headers(?APP_NAME, ?APP_VERSION)
-                   ],
-    _ = kz_amqp_worker:cast(ControlUsurp
-                           ,fun(C) -> kapi_call:publish_usurp_control(Target, C) end
-                           ),
-    lager:debug("published ~p for ~s~n", [ControlUsurp, Target]),
-
-    _ = ecallmgr_fs_command:set(Node, UUID, build_set_args(SetApi, JObj)),
-    _ = ecallmgr_fs_command:export(Node, UUID, Exports),
-    {<<"eavesdrop">>, Target}.
+-spec get_eavesdrop_app_args(kz_term:ne_binary(), kz_json:object()) -> binary().
+get_eavesdrop_app_args(UUID, JObj) ->
+    Args = [{<<"Eavesdrop-Enable-DTMF">>, kz_json:get_boolean_value(<<"Enable-DTMF">>, JObj)}],
+    scope_variables(UUID, props:filter_undefined(Args)).
 
 -type set_headers() :: kz_term:proplist() | [{kz_term:ne_binary(), kz_term:api_binary(), kz_term:ne_binary()},...].
 
@@ -1061,9 +1004,20 @@ play_app(UUID, JObj) ->
     F = ecallmgr_util:media_path(MediaName, 'new', UUID, JObj),
     %% if Leg is set, use uuid_broadcast; otherwise use playback
     case ecallmgr_fs_channel:is_bridged(UUID) of
-        'false' -> {<<"playback">>, F};
-        'true' -> play_bridged(JObj, F)
+        'true' -> play_bridged(JObj, F);
+        'false' ->
+            play_app(F
+                    ,kz_json:is_true(<<"Endless-Playback">>, JObj, 'false')
+                    ,kz_json:get_integer_value(<<"Loop-Count">>, JObj)
+                    )
     end.
+
+play_app(MediaPath, 'true', _Loop) ->
+    {<<"endless_playback">>, MediaPath};
+play_app(MediaPath, 'false', LoopCount) when is_integer(LoopCount), LoopCount > 0 ->
+    {<<"loop_playback +", (kz_term:to_binary(LoopCount))/binary>>, MediaPath};
+play_app(MediaPath, _Endless, _Loop) ->
+    {<<"playback">>, MediaPath}.
 
 -spec play_bridged(kz_json:object(), kz_term:ne_binary()) -> fs_app().
 play_bridged(JObj, F) ->
@@ -1172,12 +1126,13 @@ deflect(JObj) ->
     Target = kz_json:get_ne_binary_value(<<"Target-URI">>, JObj),
     {<<"deflect">>, Target}.
 
--spec record_call(kz_term:ne_binary(), kz_json:object()) -> fs_app().
+-spec record_call(kz_term:ne_binary(), kz_json:object()) -> fs_app() | fs_apps().
 record_call(UUID, JObj) ->
     Action = kz_json:get_ne_binary_value(<<"Record-Action">>, JObj),
     record_call(UUID, Action, JObj).
 
--spec record_call(kz_term:ne_binary(), kz_term:ne_binary(), kz_json:object()) -> fs_app().
+-spec record_call(kz_term:ne_binary(), kz_term:ne_binary(), kz_json:object()) ->
+          fs_app() | fs_apps().
 record_call(_UUID, <<"mask">>, JObj) ->
     RecordingName = case kz_json:get_ne_binary_value(<<"Media-Name">>, JObj) of
                         'undefined' -> <<"${Media-Recordings-Name[0]}">>;
@@ -1190,15 +1145,27 @@ record_call(_UUID, <<"unmask">>, JObj) ->
                         MediaName -> ecallmgr_util:recording_filename(MediaName)
                     end,
     {<<"record_session_unmask">>, RecordingName};
+record_call(_UUID, <<"pause">>, JObj) ->
+    RecordingName = case kz_json:get_ne_binary_value(<<"Media-Name">>, JObj) of
+                        'undefined' -> <<"${Media-Recordings-Name[0]}">>;
+                        MediaName -> ecallmgr_util:recording_filename(MediaName)
+                    end,
+    {<<"record_session_pause">>, RecordingName};
+record_call(_UUID, <<"resume">>, JObj) ->
+    RecordingName = case kz_json:get_ne_binary_value(<<"Media-Name">>, JObj) of
+                        'undefined' -> <<"${Media-Recordings-Name[0]}">>;
+                        MediaName -> ecallmgr_util:recording_filename(MediaName)
+                    end,
+    {<<"record_session_resume">>, RecordingName};
 record_call(UUID, <<"start">>, JObj) ->
-    ScopeVariables = record_call_vars(UUID, JObj),
+    AppVariables = record_app_vars(UUID, JObj),
     TimeLimit = record_call_limit(JObj),
 
     MediaName = kz_json:get_ne_binary_value(<<"Media-Name">>, JObj),
     RecordingName = ecallmgr_util:recording_filename(MediaName),
     RecordingId = kz_json:get_ne_binary_value(<<"Media-Recording-ID">>, JObj),
 
-    RecordArgs = [ScopeVariables
+    RecordArgs = [AppVariables
                  ,"^^", ?RECORD_CALL_PARAM_SEPARATOR
                  ,RecordingName
                  ,?RECORD_CALL_PARAM_SEPARATOR, "+"
@@ -1208,16 +1175,24 @@ record_call(UUID, <<"start">>, JObj) ->
                  ,"}"
                  ],
 
-    [{<<"unshift">>, <<"Media-Recordings=", RecordingId/binary>>}
-    ,{<<"unshift">>, <<"Media-Recordings-Name=", RecordingName/binary>>}
-    ,{<<"record_session">>, list_to_binary(RecordArgs)}
-    ];
+    case record_call_track_media_recording(JObj) of
+        true ->
+            [{<<"unshift">>, <<"Media-Recordings=", RecordingId/binary>>}
+            ,{<<"unshift">>, <<"Media-Recordings-Name=", RecordingName/binary>>}
+            ,{<<"record_session">>, list_to_binary(RecordArgs)}
+            ];
+        false ->
+            {<<"record_session">>, list_to_binary(RecordArgs)}
+    end;
 record_call(_UUID, <<"stop">>, JObj) ->
     RecordingName = case kz_json:get_ne_binary_value(<<"Media-Name">>, JObj) of
                         'undefined' -> <<"${Media-Recordings-Name[0]}">>;
                         MediaName -> ecallmgr_util:recording_filename(MediaName)
                     end,
     {<<"stop_record_session">>, RecordingName}.
+
+record_call_track_media_recording(JObj) ->
+    kz_json:is_true(<<"Track-Media-Recording">>, JObj, true).
 
 -spec record_call_limit(kz_json:object()) -> integer().
 record_call_limit(JObj) ->
@@ -1228,12 +1203,11 @@ record_call_limit(JObj) ->
         Limit -> Limit
     end.
 
--spec record_call_vars(kz_term:ne_binary(), kz_json:object()) -> binary().
-record_call_vars(UUID, JObj) ->
+-spec record_app_vars(kz_term:ne_binary(), kz_json:object()) -> binary().
+record_app_vars(UUID, JObj) ->
     Routines = [fun maybe_waste_resources/1
                ,fun(Acc) -> maybe_get_terminators(Acc, JObj) end
                ],
-    FollowTransfer = kz_json:get_binary_boolean(<<"Follow-Transfer">>, JObj, <<"true">>),
     RecordMinSec = kz_json:get_binary_value(<<"Record-Min-Sec">>, JObj),
     SampleRate = get_sample_rate(JObj),
 
@@ -1241,18 +1215,19 @@ record_call_vars(UUID, JObj) ->
                       ,[{<<"RECORD_APPEND">>, <<"true">>}
                        ,{<<"RECORD_STEREO">>, should_record_stereo(JObj)}
                        ,{<<"RECORD_SOFTWARE">>, ecallmgr_util:fs_arg_encode(?RECORD_SOFTWARE)}
-                       ,{<<"recording_follow_transfer">>, FollowTransfer}
-                       ,{<<"recording_follow_attxfer">>, FollowTransfer}
                        ,{<<"enable_file_write_buffering">>, <<"false">>}
                        ,{<<"record_min_sec">>, RecordMinSec}
                        ,{<<"record_sample_rate">>, kz_term:to_binary(SampleRate)}
+                       ,{<<"Recording-Follow-Transfer">>, record_follow_transfer(JObj)}
+                       ,{<<"Controller-App-Name">>, kz_api:app_name(JObj)}
                        ]
                       ,Routines
                       ),
-    case ecallmgr_util:process_fs_kv(UUID, Vars, 'set') of
-        [] -> <<>>;
-        Args -> list_to_binary(["%^[", kz_binary:join(Args, <<"^">>), "]"])
-    end.
+    app_variables(UUID, Vars).
+
+-spec record_follow_transfer(kz_json:object()) -> boolean().
+record_follow_transfer(JObj) ->
+    kz_json:is_true(<<"Follow-Transfer">>, JObj, false).
 
 -spec record_call_args(kz_json:object()) -> binary().
 record_call_args(JObj) ->
@@ -1458,17 +1433,14 @@ set_page_timeout(Dialplan, JObj) ->
     ].
 
 -spec set_page_endpoints(kz_term:proplist(), node(), kz_term:ne_binary(), kz_json:object(), kz_json:objects()) -> kz_term:proplist().
-set_page_endpoints(Dialplan, _Node, UUID, JObj, Endpoints) ->
-    DefaultCCV = kz_json:from_list([{<<"Auto-Answer-Suppress-Notify">>, 'true'}]),
-    CCVs = kz_json:to_proplist(kz_json:get_value(<<"Custom-Channel-Vars">>, JObj, DefaultCCV)),
-    BargeParams = ecallmgr_util:multi_set_args(UUID, CCVs, <<";">>, <<";">>),
-    AutoAnswer = list_to_binary(["{^^;sip_invite_params=intercom=true"
-                                ,";alert_info=intercom"
-                                ,BargeParams
-                                ,"}"
-                                ]),
-
+set_page_endpoints(Dialplan, Node, UUID, JObj, Endpoints) ->
+    InteractionId = kz_json:get_value([<<"Custom-Channel-Vars">>, <<?CALL_INTERACTION_ID>>], JObj, <<"${Call-Interaction-ID}">>),
+    AutoAnswer = page_auto_answer_params(UUID, JObj),
     Values = [{[<<"Custom-Channel-Vars">>, <<"Auto-Answer">>], 'true'}
+             ,{[<<"Custom-Channel-Vars">>, <<"Ecallmgr-Node">>], kz_term:to_binary(Node)}
+             ,{<<"Call-Flag-NO-Flip">>, 'true'}
+             ,{<<?CALL_INTERACTION_ID>>, InteractionId}
+             ,{<<"Existing-Call-ID">>, UUID}
              ],
     EPs = [kz_json:set_values(Values, Endpoint) || Endpoint <- Endpoints],
     Channels = [<<AutoAnswer/binary, Channel/binary>> || Channel <- ecallmgr_util:build_bridge_channels(EPs)],
@@ -1477,6 +1449,17 @@ set_page_endpoints(Dialplan, _Node, UUID, JObj, Endpoints) ->
     | Dialplan
     ].
 
+-spec page_auto_answer_params(kz_term:ne_binary(), kz_json:object()) -> binary().
+page_auto_answer_params(UUID, JObj) ->
+    DefaultCCV = kz_json:from_list([{<<"Auto-Answer-Suppress-Notify">>, 'true'}]),
+    CCVs = kz_json:to_proplist(kz_json:get_json_value(<<"Custom-Channel-Vars">>, JObj, DefaultCCV)),
+    AutoAnswerParams = [{<<"SIP-Invite-Parameters">>, <<"intercom=true">>}
+                       ,{<<"Alert-Info">>, <<"intercom">>}
+                       ],
+    Vars = props:set_values(AutoAnswerParams, CCVs),
+    Args = ecallmgr_util:multi_set_args(UUID, Vars, <<";">>),
+    list_to_binary(["{", Args, "}"]).
+
 -spec add_page_conference_app(kz_term:proplist(), kz_term:ne_binary()) -> kz_term:proplist().
 add_page_conference_app(Dialplan, ConferenceName) ->
     [{"conference", ConferenceName}
@@ -1484,21 +1467,13 @@ add_page_conference_app(Dialplan, ConferenceName) ->
     ].
 
 -spec add_page_exports(kz_term:proplist(), kz_term:ne_binary()) -> kz_term:proplist().
-add_page_exports(DP, UUID) ->
+add_page_exports(DP, _UUID) ->
     Exports = [<<"sip_redirect_context">>
-              ,<<"ecallmgr_Ecallmgr-Node">>
-              ,<<?CALL_INTERACTION_ID>>
-              ,{<<"kz_originate_aleg_uuid">>, UUID}
-              ,{<<"no_flip">>, <<"true">>}
               ],
-    ExportVars = kz_binary:join([add_page_export(Export) || Export <- Exports], <<",">>),
+    ExportVars = kz_binary:join(Exports, <<",">>),
     [{"set", <<"conference_auto_outcall_export_vars=", ExportVars/binary>>}
     |DP
     ].
-
-add_page_export({AsVar,FromVar}) ->
-    list_to_binary([AsVar, "=", FromVar]);
-add_page_export(Var) -> Var.
 
 -type ep_actions() :: kz_term:ne_binaries().
 
@@ -1578,8 +1553,94 @@ detect_speech_vars(JObj) ->
     Speech = kz_json:get_json_value(<<"ASR-Engine-Settings">>, JObj, kz_json:new()),
     case kz_json:foldl(fun add_detect_speech_var/3, [], Speech) of
         [] -> <<>>;
-        Exports -> list_to_binary(["%^[", kz_binary:join(Exports, <<"^">>), "]"])
+        Exports -> scope_variables(Exports)
     end.
 
 add_detect_speech_var(K, V, Vars) ->
     [list_to_binary([K, "=", kz_term:to_binary(V)]) | Vars].
+
+maybe_no_channel_data_scope('undefined') -> 'undefined';
+maybe_no_channel_data_scope(Value) -> <<"%^[No-Channel-Data=true]", Value/binary>>.
+
+-spec scope_variables(kz_term:ne_binary(), kz_term:proplist()) -> binary().
+scope_variables(UUID, Vars) ->
+    case ecallmgr_util:process_fs_kv(UUID, Vars, 'set') of
+        [] -> <<>>;
+        Args -> scope_variables(Args)
+    end.
+
+-spec scope_variables(kz_term:binaries()) -> binary().
+scope_variables(Vars) ->
+    list_to_binary(["%^[", kz_binary:join(Vars, <<"^">>), "]"]).
+
+-spec app_variables(kz_term:ne_binary(), kz_term:proplist()) -> binary().
+app_variables(UUID, Vars) ->
+    case ecallmgr_util:process_fs_kv(UUID, Vars, 'set') of
+        [] -> <<>>;
+        Args -> app_variables(Args)
+    end.
+
+-spec app_variables(kz_term:binaries()) -> binary().
+app_variables(Vars) ->
+    list_to_binary(["/^[", kz_binary:join(Vars, <<"^">>), "]"]).
+
+-spec redirect_app(kz_term:ne_binary(), kz_json:object()) -> fs_apps().
+redirect_app(UUID, JObj) ->
+    case ecallmgr_fs_channel:fetch(UUID, 'record') of
+        {'ok', #channel{answered = IsAnswered}} -> redirect_app(UUID, IsAnswered, JObj);
+        {'error', 'not_found'} = Error -> Error
+    end.
+
+-spec redirect_app(kz_term:ne_binary(), boolean(), kz_json:object()) -> fs_apps().
+redirect_app(_UUID, 'false', JObj) ->
+    case redirect_app_server(JObj) of
+        'undefined' ->
+            {<<"redirect">>, redirect_contact(JObj)};
+        RedirectServer ->
+            [{<<"set">>, redirect_app_server_header('false', RedirectServer)}
+            ,{<<"redirect">>, redirect_contact(JObj)}
+            ]
+    end;
+redirect_app(_UUID, 'true', JObj) ->
+    case redirect_app_server(JObj) of
+        'undefined' ->
+            {<<"deflect">>, redirect_contact(JObj)};
+        RedirectServer ->
+            [{<<"set">>, redirect_app_server_header('true', RedirectServer)}
+            ,{<<"deflect">>, redirect_contact(JObj)}
+            ]
+    end.
+
+-spec redirect_contact(kz_json:object()) -> binary().
+redirect_contact(JObj) ->
+    kz_json:get_ne_binary_value(<<"Redirect-Contact">>, JObj, <<>>).
+
+-spec redirect_app_server_header(boolean(), kz_term:ne_binary()) -> kz_term:ne_binary().
+redirect_app_server_header('false', RedirectServer) ->
+    lager:debug("set X-Redirect-Server to ~s", [RedirectServer]),
+    list_to_binary(["sip_rh_X-Redirect-Server=", RedirectServer]);
+redirect_app_server_header('true', RedirectServer) ->
+    lager:debug("set X-Redirect-Server to ~s", [RedirectServer]),
+    list_to_binary(["sip_h_X-Redirect-Server=", RedirectServer]).
+
+-spec redirect_app_server(kz_json:object()) -> kz_term:api_binary().
+redirect_app_server(JObj) ->
+    case kz_json:get_ne_binary_value(<<"Redirect-Server">>, JObj) of
+        'undefined' -> redirect_app_node(JObj);
+        Server -> redirect_app_fixup_url(Server)
+    end.
+
+-spec redirect_app_node(kz_json:object()) -> kz_term:api_binary().
+redirect_app_node(JObj) ->
+    case kz_json:get_ne_binary_value(<<"Redirect-Node">>, JObj) of
+        'undefined' -> 'undefined';
+        Node -> redirect_app_fixup_node(Node)
+    end.
+
+-spec redirect_app_fixup_node(kz_term:ne_binary()) -> kz_term:ne_binary().
+redirect_app_fixup_node(Node) ->
+    SipUrl = ecallmgr_fs_node:sip_url(Node),
+    redirect_app_fixup_url(SipUrl).
+
+redirect_app_fixup_url(SipUrl) ->
+    binary:replace(SipUrl, <<"mod_sofia@">>, <<>>).

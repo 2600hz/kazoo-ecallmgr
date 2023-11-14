@@ -1,6 +1,7 @@
 ---
 name: kazoo-application-ecallmgr
 base_branch: origin/master
+exposure: private
 metapackage:
   - name: meta-kazoo-applications
     type: required

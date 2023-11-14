@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2021, 2600Hz
+%%% @copyright (C) 2012-2023, 2600Hz
 %%% @doc
 %%% This Source Code Form is subject to the terms of the Mozilla Public
 %%% License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -29,10 +29,17 @@
                   ,{'self', []}
                   ]).
 
--define(QUEUE_OPTIONS, [{'exclusive', 'false'}]).
--define(CONSUME_OPTIONS, [{'exclusive', 'false'}]).
+-define(QUEUE_OPTIONS, []).
+-define(CONSUME_OPTIONS, []).
+-define(SHARED_QUEUE_OPTIONS, [{'exclusive', 'false'}]).
+-define(SHARED_CONSUME_OPTIONS, [{'exclusive', 'false'}]).
 
--type state() :: map().
+-define(QOS, 50).
+
+-type state() :: #{manager := pid()
+                  ,active => boolean()
+                  ,queue => kz_term:api_ne_binary()
+                  }.
 
 %%%=============================================================================
 %%% API
@@ -42,17 +49,16 @@
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
--spec start_link(pid(), kz_term:ne_binary()) -> kz_types:startlink_ret().
+-spec start_link(pid(), kz_term:api_ne_binary()) -> kz_types:startlink_ret().
 start_link(Manager, Queue) ->
     gen_listener:start_link(?MODULE
                            ,[{'responders', ?RESPONDERS}
                             ,{'bindings', ?BINDINGS}
-                            ,{'queue_name', Queue}
-                            ,{'queue_options', ?QUEUE_OPTIONS}
-                            ,{'consume_options', ?CONSUME_OPTIONS}
+                            ,{'basic_qos', ?QOS}
+                            | queue_settings(Queue)
                             ]
-                           ,[Manager]).
-
+                           ,[Manager]
+                           ).
 
 %%%=============================================================================
 %%% gen_server callbacks
@@ -79,12 +85,16 @@ handle_call(_Request, _From, State) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec handle_cast(any(), state()) -> {'noreply', state()}.
-handle_cast({'gen_listener',{'is_consuming', Active}}, #{manager := Pid} = State) ->
+handle_cast({'gen_listener',{'is_consuming', Active}}
+           ,#{manager := Pid
+             ,queue := Queue
+             }=State
+           ) ->
     lager:info("call control listener is ~s, notifying manager", [is_consuming_description(Active)]),
-    gen_server:cast(Pid, {'call_control_listener_is_ready', self(), kz_amqp_channel:consumer_channel(), Active}),
+    gen_server:cast(Pid, {'call_control_listener_is_ready', self(), kz_amqp_channel:consumer_channel(), Queue, Active}),
     {'noreply', State#{active => Active}};
-handle_cast({'gen_listener',{'created_queue', Q}}, State) ->
-    {'noreply', State#{queue => Q}};
+handle_cast({'gen_listener',{'created_queue', QueueName}}, State) ->
+    {'noreply', State#{queue => QueueName}};
 handle_cast(_Cast, State) ->
     lager:debug("unhandled cast: ~p", [_Cast]),
     {'noreply', State, 'hibernate'}.
@@ -120,5 +130,16 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {'ok', State}.
 
-is_consuming_description(true) -> <<"consuming">>;
-is_consuming_description(false) -> <<"not consuming">>.
+is_consuming_description('true') -> <<"consuming">>;
+is_consuming_description('false') -> <<"not consuming">>.
+
+queue_settings('undefined') ->
+    [{'queue_name', list_to_binary([<<"callctl-">>, kz_binary:rand_uuid()])}
+    ,{'queue_options', ?QUEUE_OPTIONS}
+    ,{'consume_options', ?CONSUME_OPTIONS}
+    ];
+queue_settings(Queue) ->
+    [{'queue_name', Queue}
+    ,{'queue_options', ?SHARED_QUEUE_OPTIONS}
+    ,{'consume_options', ?SHARED_CONSUME_OPTIONS}
+    ].

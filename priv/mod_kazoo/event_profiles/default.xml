@@ -14,10 +14,16 @@
 	<event name="DETECTED_TONE" />
 	<event name="RECORD_START" />
 	<event name="RECORD_STOP" />
+	<event name="RECORD_PAUSE" />,
+	<event name="RECORD_RESUME" />,
+	<event name="RECORD_MASK" />,
+	<event name="RECORD_UNMASK" />,
+
 	<event name="conference::maintenance" />
 	<event name="kazoo::noop" />
 	<event name="kazoo::masquerade" />
-	<event name="CHANNEL_EXECUTE_COMPLETE" />
+	<!--<event name="CHANNEL_EXECUTE_COMPLETE" />-->
+	<event name="CHANNEL_APP_EXECUTE_COMPLETE" />
 	<event name="spandsp::txfaxnegociateresult" />
 	<event name="spandsp::txfaxpageresult" />
 	<event name="spandsp::txfaxresult" />
@@ -28,7 +34,7 @@
 	<event name="CHANNEL_DATA" />
 	<event name="CHANNEL_SYNC" />
 	<event name="CALL_SECURE" />
-	<event name="CALL_UPDATE" />
+	<!--<event name="CALL_UPDATE" />-->
 	<event name="CHANNEL_HOLD" />
 	<event name="CHANNEL_UNHOLD" />
 	<event name="loopback::bowout" />

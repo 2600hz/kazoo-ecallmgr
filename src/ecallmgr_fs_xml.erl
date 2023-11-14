@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2011-2021, 2600Hz
+%%% @copyright (C) 2011-2023, 2600Hz
 %%% @doc Generate the XML for various FS responses
 %%% @author James Aimonetti
 %%% @author Karl Anderson
@@ -18,11 +18,11 @@
         ,directory_resp_group_xml/3
         ,acl_xml/1, empty_response/0
         ,not_found/0, not_found/1
-        ,sip_profiles_xml/1, sofia_gateways_xml_to_json/1
+        ,sofia_conf_xml/1
         ,sip_channel_xml/1
         ,conference_resp_xml/1
         ,event_filters_resp_xml/1
-        ,directory_resp_location_xml/3
+        ,directory_resp_location_xml/2, directory_resp_location_xml/3
         ,prompt_resp_xml/2
         ]).
 
@@ -41,7 +41,7 @@
 -export([action_el/1, action_el/2, action_el/3]).
 -export([anti_action_el/1, anti_action_el/2, anti_action_el/3]).
 -export([condition_el/1, condition_el/3]).
--export([extension_el/1, extension_el/3]).
+-export([extension_el/1, extension_el/2, extension_el/3]).
 -export([context_el/2]).
 -export([variables_el/1, variable_el/2]).
 -export([hunt_context/1, context/1, context/2]).
@@ -55,16 +55,6 @@ acl_xml(AclsJObj) ->
     NetworkListEl = network_list_el([V || {_, V} <- orddict:to_list(AclsFold)]),
 
     ConfigEl = config_el(<<"acl.conf">>, <<"kazoo generated ACL lists">>, NetworkListEl),
-
-    SectionEl = section_el(<<"configuration">>, ConfigEl),
-
-    {'ok', xmerl:export([SectionEl], 'fs_xml')}.
-
--spec sip_profiles_xml(kz_json:object()) -> {'ok', iolist()}.
-sip_profiles_xml(JObj) ->
-    ProfilesEl = sofia_profiles_el(JObj),
-
-    ConfigEl = config_el(<<"sofia.conf">>, ProfilesEl),
 
     SectionEl = section_el(<<"configuration">>, ConfigEl),
 
@@ -235,6 +225,8 @@ conference_profile_param({<<"extra-settings">>, JObj}, Acc) ->
 conference_profile_param({<<"conference-variables">>, JObj}, Acc) ->
     VariablesEls = variables_el([variable_el(K, V) || {K, V} <- kz_json:to_proplist(JObj)]),
     Acc ++ [VariablesEls];
+conference_profile_param({K, Array}, Acc) when is_list(Array) ->
+    [param_el(K, kz_term:to_binary(V)) || V <- Array] ++ Acc;
 conference_profile_param({K, V}, Acc) ->
     [param_el(K, kz_term:to_binary(V)) | Acc].
 
@@ -298,16 +290,27 @@ should_bypass_media(RouteJObj) ->
 -spec route_resp_xml(kz_term:ne_binary(), kz_json:objects(), kz_json:object(), dialplan_context()) -> {'ok', iolist()}.
 route_resp_xml(<<"bridge">>, Routes, JObj, DialplanContext) ->
     lager:debug("creating a bridge XML response"),
-    LogEl = route_resp_log_winning_node(),
-    RingbackEl = route_resp_ringback(JObj),
-    TransferEl = route_resp_transfer_ringback(JObj),
+    Bridge = [route_resp_progress(JObj)
+             ,route_resp_log_winning_node()
+             ,route_resp_set_winning_node()
+             ,route_resp_bridge_id()
+             ,route_resp_ccvs(JObj)
+             ,route_resp_cavs(JObj)
+             ,route_resp_ringback(JObj)
+             ,route_resp_transfer_ringback(JObj)
+             ],
+    Actions = [E || E <- Bridge, E =/= 'undefined'],
+
     %% format the Route based on protocol
     {_Idx, Extensions} = lists:foldr(fun route_resp_fold/2, {1, []}, Routes),
+
     FailRespondEl = action_el(<<"respond">>, <<"${bridge_hangup_cause}">>),
     FailConditionEl = condition_el(FailRespondEl),
     FailExtEl = extension_el(<<"failed_bridge">>, <<"false">>, [FailConditionEl]),
+
     Context = context(JObj, DialplanContext),
-    ContextEl = context_el(Context, [LogEl, RingbackEl, TransferEl] ++ [unset_custom_sip_headers()] ++ Extensions ++ [FailExtEl]),
+    ContextContent = Actions ++ maybe_unset_custom_sip_headers() ++ Extensions ++ [FailExtEl],
+    ContextEl = context_el(Context, ContextContent),
     SectionEl = section_el(<<"dialplan">>, <<"Route Bridge Response">>, ContextEl),
     {'ok', xmerl:export([SectionEl], 'fs_xml')};
 
@@ -331,6 +334,8 @@ route_resp_xml(<<"dialplan_error">>, _Routes, JObj, DialplanContext) ->
             ,route_resp_bridge_id()
             ,route_resp_ringback(JObj)
             ,route_resp_transfer_ringback(JObj)
+            ,route_resp_ccvs(JObj)
+            ,route_resp_cavs(JObj)
             ,action_el(<<"respond">>, [ErrCode, ErrMsg])
             ],
     ErrExtEl = extension_el([condition_el(Exten)]),
@@ -342,7 +347,13 @@ route_resp_xml(<<"dialplan_error">>, _Routes, JObj, DialplanContext) ->
 route_resp_xml(<<"chatplan_error">>, _Routes, JObj, _DialplanContext) ->
     ErrCode = kz_json:get_value(<<"Route-Error-Code">>, JObj),
     ErrMsg = [" ", kz_json:get_value(<<"Route-Error-Message">>, JObj, <<>>)],
-    Exten = [action_el(<<"reply">>, [ErrCode, ErrMsg])],
+    Exten = [route_resp_log_winning_node()
+            ,route_resp_set_winning_node()
+            ,route_resp_bridge_id()
+            ,route_resp_ccvs(JObj)
+            ,route_resp_cavs(JObj)
+            ,action_el(<<"reply">>, [ErrCode, ErrMsg])
+            ],
     ErrExtEl = extension_el([condition_el(Exten)]),
     ContextEl = context_el(?DEFAULT_FREESWITCH_CONTEXT, [ErrExtEl]),
     SectionEl = section_el(<<"chatplan">>, <<"Route Error Response">>, ContextEl),
@@ -362,6 +373,9 @@ route_resp_xml(<<"sms_error">>, _Routes, JObj, _DialplanContext) ->
     ErrMsg = [" ", kz_json:get_value(<<"Route-Error-Message">>, JObj, <<>>)],
     Exten = [route_resp_log_winning_node()
             ,route_resp_set_winning_node()
+            ,route_resp_bridge_id()
+            ,route_resp_ccvs(JObj)
+            ,route_resp_cavs(JObj)
             ,action_el(<<"respond">>, [ErrCode, ErrMsg])
             ],
     ErrExtEl = extension_el([condition_el(Exten)]),
@@ -396,21 +410,43 @@ route_resp_bridge_id() ->
     Action = action_el(<<"export">>, [?SET_CCV(<<"Bridge-ID">>, <<"${UUID}">>)], 'true'),
     condition_el(Action, <<"${", (?CCV(<<"Bridge-ID">>))/binary, "}">>, <<"^$">>).
 
--spec route_resp_set_originating_proxy(dialplan_context()) -> kz_types:xml_el().
+-spec route_resp_set_originating_proxy(dialplan_context()) -> kz_types:xml_el() | 'undefined'.
 route_resp_set_originating_proxy(#{payload := Payload}) ->
-    action_el(<<"set">>, list_to_binary([<<"originating_proxy=">>, kz_json:get_ne_binary_value(<<"Originating-Proxy">>, Payload, <<>>)])).
+    case kz_json:get_ne_binary_value(<<"Originating-Proxy">>, Payload) of
+        'undefined' -> 'undefined';
+        Proxy -> action_el(<<"set">>, list_to_binary([<<"originating_proxy=">>, Proxy]))
+    end.
 
--spec unset_custom_sip_headers() -> kz_types:xml_el().
+-spec unset_custom_sip_headers() -> kz_types:xml_el() | 'undefined'.
 unset_custom_sip_headers() ->
-    action_el(<<"kz_prefix_unset">>, <<"sip_h_X-AUTH">>).
+    case unset_cshs() of
+        <<>> -> 'undefined';
+        CSHs -> action_el(<<"kz_prefix_unset">>, CSHs)
+    end.
+
+-spec maybe_unset_custom_sip_headers() -> kz_types:xml_els().
+maybe_unset_custom_sip_headers() ->
+    case unset_custom_sip_headers() of
+        'undefined' -> [];
+        Action -> [Action]
+    end.
+
+unset_cshs() ->
+    kz_binary:join(lists:map(fun(CSH) -> <<"sip_h_", CSH/binary>> end, unset_csh_list()), <<"|">>).
+
+unset_csh_list() ->
+    kz_app_config:get_ne_binaries(?APP, <<"dialplan.route_resp.park.unset-cshs">>, default_unset_csh_list()).
+
+default_unset_csh_list() -> [].
 
 -spec route_resp_log_winning_node() -> kz_types:xml_el().
 route_resp_log_winning_node() ->
     action_el(<<"log">>, [<<"NOTICE log|${uuid}|", (kz_term:to_binary(node()))/binary, " won call control">>]).
 
 route_resp_set_winning_node() ->
-    action_el(<<"export">>, [?SET_CCV(<<"Ecallmgr-Node">>, (kz_term:to_binary(node())))]).
+    action_el(<<"export">>, [?SET_CCV(<<"Ecallmgr-Node">>, (kz_term:to_binary(node())))], 'true').
 
+-spec route_resp_fire_route_win(kz_json:object(), dialplan_context()) -> kz_types:xml_el().
 route_resp_fire_route_win(JObj, #{'control_q' := ControlQ
                                  ,'fetch_id' := FetchId
                                  }) ->
@@ -424,7 +460,14 @@ route_resp_fire_route_win(JObj, #{'control_q' := ControlQ
              ],
     Args = [<<K/binary, "=", V/binary>> || {K, V} <- Params, kz_term:is_not_empty(V)],
     EventApp = kz_app_config:get_ne_binary(?APP, [<<"dialplan">>, <<"apps">>, <<"event">>], <<"kz_deliver_event">>),
-    action_el(EventApp, kz_binary:join(Args, <<",">>), 'true').
+    action_el(EventApp, kz_binary:join(Args, <<",">>)).
+
+-spec route_resp_channel_update(kz_json:object(), dialplan_context()) -> kz_types:xml_el().
+route_resp_channel_update(_JObj, _Context) ->
+    Params = [{<<"Event-Name">>, <<"CHANNEL_DATA">>}],
+    Args = [<<K/binary, "=", V/binary>> || {K, V} <- Params, kz_term:is_not_empty(V)],
+    EventApp = kz_app_config:get_ne_binary(?APP, [<<"dialplan">>, <<"apps">>, <<"event">>], <<"kz_deliver_event">>),
+    action_el(EventApp, kz_binary:join(Args, <<",">>)).
 
 -spec route_resp_ringback(kz_json:object()) -> kz_types:xml_el().
 route_resp_ringback(JObj) ->
@@ -486,9 +529,20 @@ route_resp_transfer_ringback(JObj) ->
 -spec route_resp_pre_park_action(kz_json:object()) -> 'undefined' | kz_types:xml_el().
 route_resp_pre_park_action(JObj) ->
     case kz_json:get_value(<<"Pre-Park">>, JObj) of
-        <<"ring_ready">> -> action_el(<<"ring_ready">>);
+        <<"ring_ready">> ->
+            case kz_json:is_true(<<"Ignore-Progress">>, JObj, 'false') of
+                'true' -> action_el(<<"ring_ready">>);
+                'false' -> 'undefined'
+            end;
         <<"answer">> -> action_el(<<"answer">>);
         _Else -> 'undefined'
+    end.
+
+-spec route_resp_progress(kz_json:object()) -> 'undefined' | kz_types:xml_el().
+route_resp_progress(JObj) ->
+    case kz_json:is_true(<<"Ignore-Progress">>, JObj, 'false') of
+        'true' -> 'undefined';
+        'false' -> action_el(<<"ring_ready">>, 'undefined', 'true')
     end.
 
 -spec maybe_start_dtmf_action(dialplan_context()) -> 'undefined' | kz_types:xml_el().
@@ -619,13 +673,13 @@ create_asserted_identity_header(Name, Number, Realm) ->
 
 -spec kazoo_vars_to_fs_vars(channel_var_fold() | kz_term:proplist()) -> channel_var_fold().
 kazoo_vars_to_fs_vars({Props, Results}) ->
-    {[], lists:foldr(fun kazoo_var_to_fs_var/2, Results, Props)};
+    {[], lists:foldr(fun kazoo_var_to_fs_var/2, Results, kazoo_merge_vars(Props))};
 kazoo_vars_to_fs_vars(Props) ->
     kazoo_vars_to_fs_vars({Props, []}).
 
 -spec kazoo_var_to_fs_var({binary(), binary() | kz_json:object()}, kz_term:ne_binaries()) -> iolist().
 kazoo_var_to_fs_var({<<"Custom-Channel-Vars">>, JObj}, Vars) ->
-    kz_json:foldl(fun kazoo_var_to_fs_var_fold/3, Vars, JObj);
+    kz_json:foldl(fun kazoo_var_to_fs_var_fold/3, Vars, kazoo_merge_vars(JObj));
 
 kazoo_var_to_fs_var({<<"Custom-Application-Vars">>, JObj}, Vars) ->
     kz_json:foldl(fun kazoo_cavs_to_fs_vars_fold/3, Vars, JObj);
@@ -655,6 +709,10 @@ kazoo_var_to_fs_var({<<"Caller-ID-Type">>, <<"pid">>}, Vars) ->
 
 kazoo_var_to_fs_var({<<"origination_uuid">> = K, UUID}, Vars) ->
     [encode_fs_val(K, UUID) | Vars];
+
+kazoo_var_to_fs_var({<<"Merged-Hold-Media">>, JObj}, Vars) ->
+    MediaPath = ecallmgr_util:moh_media_path('extant', get('callid'), JObj),
+    [encode_fs_val("hold_music", MediaPath) | Vars];
 
 kazoo_var_to_fs_var({<<"Hold-Media">>, Media}, Vars) ->
     MediaPath = ecallmgr_util:moh_media_path(Media, 'extant', get('callid'), kz_json:new()),
@@ -714,6 +772,12 @@ kazoo_var_to_fs_var({<<"Call-Context">>, JObj}, Vars) ->
     Val = kz_json:encode(JObj),
     [encode_fs_val("kz-endpoint-runtime-context", Val) | Vars];
 
+kazoo_var_to_fs_var({<<"SIP-Diversions">>, V}, Vars) ->
+    [encode_fs_val("sip_h_Diversion",  encode_sip_diversions(V)) | Vars];
+
+kazoo_var_to_fs_var({<<"SIP-Multiparts">>, JObj}, Vars) ->
+    kz_json:foldl(fun encode_sip_multiparts_fold/3, Vars, JObj);
+
 kazoo_var_to_fs_var({AMQPHeader, V}, Vars) ->
     case lists:keyfind(AMQPHeader, 1, ?SPECIAL_CHANNEL_VARS) of
         'false' -> Vars;
@@ -722,6 +786,29 @@ kazoo_var_to_fs_var({AMQPHeader, V}, Vars) ->
             [encode_fs_val(Prefix, Val) | Vars]
     end;
 kazoo_var_to_fs_var(_, Vars) -> Vars.
+
+
+kazoo_merge_vars(Props) when is_list(Props) ->
+    kz_json:to_proplist(kazoo_merge_vars(kz_json:from_list(Props)));
+kazoo_merge_vars(JObj) ->
+    Routines = [fun kazoo_merge_hold_media/1],
+    lists:foldl(fun kazoo_merge_vars_fold/2, JObj, Routines).
+
+kazoo_merge_vars_fold(Fun, JObj) -> Fun(JObj).
+
+kazoo_merge_hold_media(JObj) ->
+    Keys = [{<<"Hold-Media">>, [<<"Merged-Hold-Media">>, <<"Hold-Media">>]}
+           ,{<<"Hold-Media-Options">>, [<<"Merged-Hold-Media">>, <<"Hold-Media-Options">>]}
+           ,{<<"Custom-Hold-Media">>, [<<"Merged-Custom-Hold-Media">>, <<"Hold-Media">>]}
+           ,{<<"Custom-Hold-Media-Options">>, [<<"Merged-Custom-Hold-Media">>, <<"Hold-Media-Options">>]}
+           ],
+    lists:foldl(fun kazoo_merge_hold_media_fold/2, JObj, Keys).
+
+kazoo_merge_hold_media_fold({Key, NewKey}, JObj) ->
+    case kz_json:get_value(Key, JObj) of
+        'undefined' -> JObj;
+        Value -> kz_json:set_value(NewKey, Value, kz_json:delete_key(Key, JObj))
+    end.
 
 -spec participant_flags_to_var(kz_term:ne_binaries()) -> kz_term:ne_binary().
 participant_flags_to_var(Flags) ->
@@ -785,6 +872,9 @@ kazoo_var_to_fs_var_fold(<<"Loopback-Request-Variables">> = Key, Vars, Acc) ->
     Val = kz_binary:join([ecallmgr_util:get_fs_key(Var) || Var <- Vars], <<",">>),
     [encode_fs_val(Prefix, Val) | Acc];
 
+kazoo_var_to_fs_var_fold(<<"Media-Control">>, Variables, Acc) ->
+    kz_json:foldl(fun media_control_fold/3, Acc, Variables);
+
 kazoo_var_to_fs_var_fold(<<"Channel-Actions">>, Actions, Acc) ->
     [Actions |Acc];
 
@@ -794,13 +884,13 @@ kazoo_var_to_fs_var_fold(K, V, Acc) ->
             Val = ecallmgr_util:maybe_sanitize_fs_value(K, V),
             Prefix = <<?CHANNEL_VAR_PREFIX, K/binary>>,
             [encode_fs_val(Prefix, Val) | Acc];
-        {_, <<"group_confirm_file">>=Prefix} ->
-            Val = kz_term:to_list(ecallmgr_util:media_path(V, 'extant', get('callid'), kz_json:new())),
-            [encode_fs_val(Prefix, Val) | Acc];
         {_, Prefix} ->
             Val = ecallmgr_util:maybe_sanitize_fs_value(K, V),
             [encode_fs_val(Prefix, Val) | Acc]
     end.
+
+media_control_fold(K, V, Acc) ->
+    [encode_fs_val(K, V) | Acc].
 
 -spec kazoo_cavs_to_fs_vars_fold(kz_json:key(), kz_json:json_term(), iolist()) -> iolist().
 kazoo_cavs_to_fs_vars_fold(K, V, Acc) ->
@@ -817,6 +907,13 @@ kazoo_cav_prefix_and_value(V) ->
     %% Escape all embedded single quotes and commas so that FS can consume them
     Escaped = re:replace(Encoded, <<"([,'])">>, <<"\\\\\\g1">>, ['global', {'return', 'binary'}]),
     {Prefix, kz_term:to_list(Escaped)}.
+
+-spec kazoo_cav_prefix(kz_json:json_term()) -> kz_term:ne_binary().
+kazoo_cav_prefix(V) ->
+    case kz_json:is_json_object(V) of
+        'true' -> <<?JSON_APPLICATION_VAR_PREFIX>>;
+        'false' -> <<?APPLICATION_VAR_PREFIX>>
+    end.
 
 -spec codec_mappings(kz_term:ne_binary()) -> kz_term:ne_binary().
 codec_mappings(<<"G722_32">>) ->
@@ -855,19 +952,22 @@ get_profile_params(JObj) ->
        ) ++ [{<<"Context">>, ?DEFAULT_FREESWITCH_CONTEXT}]).
 
 -spec get_profile_param(tuple(), kz_term:proplist()) -> kz_term:proplist().
+get_profile_param({<<"Endpoint-Tag-Rules">> = Key, Val}, Acc) ->
+    [{Key, kz_json:encode(Val)} | Acc];
 get_profile_param({Key, Val}, Acc) ->
     case lists:keyfind(Key, 1, ?CALLER_PROFILE_VARS) of
-        'false' -> [{Key, Val} | Acc];
+        'false' -> [{Key, ecallmgr_util:maybe_sanitize_fs_value(Key, Val)} | Acc];
         {_Key, Prefix} -> [{Prefix, ecallmgr_util:maybe_sanitize_fs_value(Key, Val)} | Acc]
     end.
 
 -spec get_profile_vars_fold(kz_json:key(), kz_json:json_term(), iolist()) -> iolist().
+get_profile_vars_fold(<<"Endpoint-Tag-Rules">> = Key, Val, Acc) ->
+    [list_to_binary([Key, "='", kz_json:encode(Val), "'"]) | Acc];
 get_profile_vars_fold(K, V, Acc) ->
     case lists:keyfind(K, 1, ?CALLER_PROFILE_VARS) of
         'false' ->
-            [list_to_binary([kz_term:to_list(K)
-                            ,"='", kz_term:to_list(V), "'"])
-            | Acc];
+            Val = ecallmgr_util:maybe_sanitize_fs_value(K, V),
+            [encode_fs_val(K, Val) | Acc];
         {_, Prefix} ->
             Val = ecallmgr_util:maybe_sanitize_fs_value(K, V),
             [encode_fs_val(Prefix, Val) | Acc]
@@ -875,20 +975,31 @@ get_profile_vars_fold(K, V, Acc) ->
 
 -spec get_channel_params(kz_json:object() | kz_term:proplist()) -> kz_term:proplist().
 get_channel_params(Props) when is_list(Props) ->
-    [get_channel_params_fold(K, V) || {K, V} <- Props];
+    lists:foldl(fun get_channel_params/2, [], kazoo_merge_vars(Props));
 get_channel_params(JObj) ->
     get_channel_params(
       kz_json:to_proplist(
         kz_json:get_value(<<"Custom-Channel-Vars">>, JObj, kz_json:new())
        )).
 
--spec get_channel_params_fold(kz_term:ne_binary(), kz_term:ne_binary()) ->
-          {kz_term:ne_binary(), kz_term:ne_binary()}.
-get_channel_params_fold(<<"Hold-Media">>=Key, Media) ->
+-type channel_param_kv() :: {kz_term:ne_binary(), kz_json:json_term()}.
+-type channel_param_kvs() :: [channel_param_kv()].
+
+-spec get_channel_params(channel_param_kv(), channel_param_kvs()) -> channel_param_kvs().
+get_channel_params({<<"Media-Control">>, JObj}, Acc) ->
+    Acc ++ kz_json:to_proplist(JObj);
+get_channel_params({K, V}, Acc) ->
+    [get_channel_param(K, V) | Acc].
+
+get_channel_param(<<"Merged-Hold-Media">>, JObj) ->
+    {ecallmgr_util:get_fs_key(<<"Hold-Media">>), ecallmgr_util:moh_media_path('extant', kz_log:get_callid(), JObj)};
+get_channel_param(<<"Merged-Custom-Hold-Media">>, JObj) ->
+    {ecallmgr_util:get_fs_key(<<"Custom-Hold-Media">>), ecallmgr_util:moh_media_path('extant', kz_log:get_callid(), JObj)};
+get_channel_param(<<"Hold-Media">>=Key, Media) ->
     {ecallmgr_util:get_fs_key(Key), ecallmgr_util:moh_media_path(Media, 'extant', kz_log:get_callid(), kz_json:new())};
-get_channel_params_fold(<<"Custom-Hold-Media">>=Key, Media) ->
+get_channel_param(<<"Custom-Hold-Media">>=Key, Media) ->
     {ecallmgr_util:get_fs_key(Key), ecallmgr_util:moh_media_path(Media, 'extant', kz_log:get_callid(), kz_json:new())};
-get_channel_params_fold(Key, Val) ->
+get_channel_param(Key, Val) ->
     {ecallmgr_util:get_fs_key(Key), ecallmgr_util:maybe_sanitize_fs_value(Key, Val)}.
 
 -spec get_custom_sip_headers(kz_json:object()) -> kz_json:json_proplist().
@@ -1223,6 +1334,10 @@ extension_el(Children) ->
                ,content=Children
                }.
 
+-spec extension_el(kz_types:xml_attrib_value(), kz_types:xml_els()) -> kz_types:xml_el().
+extension_el(Name, Children) ->
+    extension_el(Name, 'undefined', Children).
+
 -spec extension_el(kz_types:xml_attrib_value(), kz_types:xml_attrib_value() | 'undefined', kz_types:xml_els()) -> kz_types:xml_el().
 extension_el(Name, 'undefined', Children) ->
     #xmlElement{name='extension'
@@ -1270,7 +1385,13 @@ action_el(App, Data) ->
                            ]
                }.
 
--spec action_el(kz_types:xml_attrib_value(), kz_types:xml_attrib_value(), boolean()) -> kz_types:xml_el().
+-spec action_el(kz_types:xml_attrib_value(), kz_types:xml_attrib_value() | 'undefined', boolean()) -> kz_types:xml_el().
+action_el(App, 'undefined', Inline) ->
+    #xmlElement{name='action'
+               ,attributes=[xml_attrib('application', App)
+                           ,xml_attrib('inline', kz_term:to_binary(Inline))
+                           ]
+               };
 action_el(App, Data, Inline) ->
     #xmlElement{name='action'
                ,attributes=[xml_attrib('application', App)
@@ -1327,41 +1448,81 @@ prepend_child(#xmlElement{content=Contents}=El, Child) ->
 xml_attrib(Name, Value) when is_atom(Name) ->
     #xmlAttribute{name=Name, value=kz_term:to_list(Value)}.
 
+-spec sofia_conf_xml(kz_json:object()) -> {'ok', iolist()}.
+sofia_conf_xml(JObj) ->
+    SettingsEl = sofia_global_settings_el(kz_json:get_json_value(<<"settings">>, JObj)),
+    ProfilesEl = sofia_profiles_el(kz_json:get_json_value(<<"profiles">>, JObj)),
+
+    ConfigEl = config_el(<<"sofia.conf">>, [SettingsEl, ProfilesEl]),
+
+    SectionEl = section_el(<<"configuration">>, ConfigEl),
+
+    {'ok', xmerl:export([SectionEl], 'fs_xml')}.
+
+sofia_global_settings_el('undefined') ->
+    #xmlElement{name='global_settings'};
+sofia_global_settings_el(Settings) ->
+    #xmlElement{name='global_settings', content=sofia_settings_el(Settings)}.
+
+sofia_profiles_el('undefined') ->
+    #xmlElement{name='profiles'};
 sofia_profiles_el(JObj) ->
-    Content = lists:foldl(fun(Key, Xml) ->
-                                  Profile = kz_json:get_value(Key, JObj),
-                                  [#xmlElement{name='profile'
-                                              ,attributes=[xml_attrib('name', Key)]
-                                              ,content=sofia_profile_el(Profile)
-                                              }
-                                  | Xml
-                                  ]
-                          end, [], kz_json:get_keys(JObj)),
+    Content = lists:foldl(sofia_profiles_fold_fun(JObj), [], kz_json:get_keys(JObj)),
     #xmlElement{name='profiles', content=Content}.
 
+sofia_profiles_fold_fun(JObj) ->
+    fun(Key, Xml) ->
+            Profile = kz_json:get_json_value(Key, JObj),
+            [#xmlElement{name='profile'
+                        ,attributes=[xml_attrib('name', Key)]
+                        ,content=sofia_profile_el(Profile)
+                        }
+            | Xml
+            ]
+    end.
+
 sofia_profile_el(JObj) ->
-    Settings = kz_json:get_value(<<"Settings">>, JObj, kz_json:new()),
-    Gateways = kz_json:get_value(<<"Gateways">>, JObj, kz_json:new()),
-    [#xmlElement{name='settings'
-                ,content=sofia_settings_el(Settings)
-                }
-    ,#xmlElement{name='gateways'
-                ,content=sofia_gateways_el(Gateways)
-                }
-    ].
+    Routines = [{<<"Settings">>, fun sofia_profile_settings/1}
+               ,{<<"Gateways">>, fun sofia_profile_gateways/1}
+               ],
+    lists:foldr(sofia_profile_fold_fun(JObj), [], Routines).
+
+sofia_profile_fold_fun(JObj) ->
+    fun({Key, Fun}, Acc) ->
+            case kz_json:get_json_value(Key, JObj) of
+                'undefined' -> Acc;
+                Value -> [Fun(Value) | Acc]
+            end
+    end.
+
+sofia_profile_settings(Settings) ->
+    #xmlElement{name='settings', content=sofia_settings_el(Settings)}.
+
+sofia_profile_gateways(Gateways) ->
+    #xmlElement{name='gateways', content=sofia_gateways_el(Gateways)}.
 
 sofia_settings_el(JObj) ->
-    lists:foldl(fun(Key, Xml) ->
-                        Value = kz_json:get_value(Key, JObj),
-                        Name = kz_term:to_lower_binary(Key),
-                        [#xmlElement{name='param'
-                                    ,attributes=[xml_attrib('name', Name)
-                                                ,xml_attrib('value', Value)
-                                                ]
-                                    }
-                        | Xml
-                        ]
-                end, [], kz_json:get_keys(JObj)).
+    lists:foldl(sofia_settings_el_fun(JObj), [], kz_json:get_keys(JObj)).
+
+sofia_settings_el_fun(JObj) ->
+    fun(Key, Xml) ->
+            Name = kz_term:to_lower_binary(Key),
+            case kz_json:get_value(Key, JObj) of
+                'undefined' -> Xml;
+                Values when is_list(Values) ->
+                    lists:foldl(sofia_setting_el_fun(Name), Xml, Values);
+                Value ->
+                    sofia_setting_el(Name, Value, Xml)
+            end
+    end.
+
+sofia_setting_el_fun(Name) ->
+    fun(Value, Acc) ->
+            sofia_setting_el(Name, Value, Acc)
+    end.
+
+sofia_setting_el(Name, Value, Xml) ->
+    [param_el(Name, kz_term:to_binary(Value)) | Xml].
 
 sofia_gateways_el(JObj) ->
     lists:foldl(fun(Key, Xml) ->
@@ -1407,44 +1568,6 @@ sofia_gateway_vars_el(JObj) ->
                         ]
                 end, [], kz_json:get_keys(JObj)).
 
--spec sofia_gateways_xml_to_json(kz_types:xml_el() | kz_types:xml_els()) -> kz_json:object().
-sofia_gateways_xml_to_json(Xml) ->
-    lists:foldl(fun sofia_gateway_xml_to_json/2
-               ,kz_json:new()
-               ,get_sofia_gateways_el(Xml)
-               ).
-
-get_sofia_gateways_el(Xml) ->
-    case xmerl_xpath:string("/gateways/gateway", Xml) of
-        #xmlElement{}=Gateways -> [Gateways];
-        Else -> Else
-    end.
-
-sofia_gateway_xml_to_json(Xml, JObj) ->
-    Id = kz_xml:get_value("/gateway/name/text()", Xml),
-    InboundVars = xmerl_xpath:string("/gateway/inbound-variables/*", Xml),
-    OutboundVars = xmerl_xpath:string("/gateway/outbound-variables/*", Xml),
-    Props = [{<<"Username">>, kz_xml:get_value("/gateway/username/text()", Xml)}
-            ,{<<"Password">>, kz_xml:get_value("/gateway/password/text()", Xml)}
-            ,{<<"Realm">>, kz_xml:get_value("/gateway/realm/text()", Xml)}
-            ,{<<"Proxy">>, kz_xml:get_value("/gateway/proxy/text()", Xml)}
-            ,{<<"From-Domain">>, kz_xml:get_value("/gateway/from/text()", Xml)}
-            ,{<<"Expire-Seconds">>, kz_xml:get_value("/gateway/expires/text()", Xml)}
-            ,{<<"Inbound-Variables">>, sofia_gateway_vars_xml_to_json(InboundVars, kz_json:new())}
-            ,{<<"Outbound-Variables">>, sofia_gateway_vars_xml_to_json(OutboundVars, kz_json:new())}
-            ],
-    kz_json:set_value(Id, kz_json:from_list(Props), JObj).
-
--spec sofia_gateway_vars_xml_to_json(kz_types:xml_el() | kz_types:xml_els(), kz_json:object()) -> kz_json:object().
-sofia_gateway_vars_xml_to_json(#xmlElement{}=Xml, JObj) ->
-    sofia_gateway_vars_xml_to_json([Xml], JObj);
-sofia_gateway_vars_xml_to_json([], JObj) ->
-    JObj;
-sofia_gateway_vars_xml_to_json([Var|Vars], JObj) ->
-    Key = kz_xml:get_value("/variable/@name", Var),
-    Value = kz_xml:get_value("/variable/@value", Var),
-    sofia_gateway_vars_xml_to_json(Vars, kz_json:set_value(Key, Value, JObj)).
-
 -spec event_filters_resp_xml(kz_term:ne_binaries()) -> {'ok', iolist()}.
 event_filters_resp_xml(Headers) ->
     EventFiltersEl = event_filters_xml(Headers),
@@ -1469,23 +1592,24 @@ event_filters_el(Filters) ->
 
 -spec route_resp_park_xml(kz_json:object(), dialplan_context()) -> kz_types:xml_els().
 route_resp_park_xml(JObj, DialplanContext) ->
-    Inline = [route_resp_fire_route_win(JObj, DialplanContext)
-             ,route_resp_set_control_info(DialplanContext)
-             ,route_resp_bridge_id()
-             ],
-    Exten = [route_resp_ringback(JObj)
+    Exten = [route_resp_progress(JObj)
+            ,route_resp_log_winning_node()
+            ,route_resp_set_winning_node()
+            ,route_resp_bridge_id()
+            ,route_resp_set_control_info(DialplanContext)
+            ,route_resp_ringback(JObj)
             ,route_resp_transfer_ringback(JObj)
             ,maybe_start_dtmf_action(DialplanContext)
             ,route_resp_pre_park_action(JObj)
-            ,route_resp_log_winning_node()
-            ,route_resp_set_winning_node()
             ,route_resp_ccvs(JObj)
             ,route_resp_cavs(JObj)
             ,unset_custom_sip_headers()
             ,route_resp_set_originating_proxy(DialplanContext)
+            ,route_resp_fire_route_win(JObj, DialplanContext)
+            ,route_resp_channel_update(JObj, DialplanContext)
             ,route_resp_park()
             ],
-    [E || E <- Inline ++ Exten, E =/= 'undefined'].
+    [E || E <- Exten, E =/= 'undefined'].
 
 -spec route_resp_set_control_info(dialplan_context()) -> kz_types:xml_el().
 route_resp_set_control_info(#{control_q := ControlQ
@@ -1526,15 +1650,8 @@ directory_resp_group_id(Endpoint, JObj) ->
         GroupID -> GroupID
     end.
 
-dial_string(Node, Endpoint, Id) ->
-    Uri = kz_json:get_ne_binary_value(<<"SIP-Invite-Route-URI">>, Endpoint),
-    SIPInterface = kz_json:get_ne_binary_value(<<"SIP-Interface">>, Endpoint, ?DEFAULT_FS_PROFILE),
-    dial_string(Uri, Node, Id, SIPInterface).
-
-dial_string('undefined', Node, Id, _SIPInterface) ->
-    list_to_binary(["${", freeswitch:contact_api(Node), "(", Id, ")}"]);
-dial_string(Uri, _Node, _Id, SIPInterface) ->
-    list_to_binary(["sofia/", SIPInterface, "/", Uri]).
+dial_string(Endpoint) ->
+    kz_json:get_ne_binary_value(<<"Endpoint-Dial-String">>, Endpoint).
 
 route_uri(Endpoint) ->
     kz_json:get_ne_binary_value(<<"SIP-Proxy-Route-URI">>, Endpoint).
@@ -1587,10 +1704,9 @@ directory_resp_resource_xml(_Node, Endpoint, JObj) ->
     {'ok', xmerl:export([SectionEl], 'fs_xml')}.
 
 -spec directory_resp_device_xml(atom(), kz_json:object(), kz_json:object()) -> {'ok', iolist()}.
-directory_resp_device_xml(Node, Endpoint, JObj) ->
+directory_resp_device_xml(_Node, Endpoint, JObj) ->
     DomainName = directory_resp_domain(Endpoint, JObj),
     UserId = directory_resp_user_id(Endpoint, JObj),
-    Id = <<UserId/binary, "@", DomainName/binary>>,
 
     ProfileParams = get_profile_params(Endpoint),
     VariableEls = get_directory_variables(Endpoint),
@@ -1609,7 +1725,7 @@ directory_resp_device_xml(Node, Endpoint, JObj) ->
     CRVsEl = [param_el(<<"dial-var-", K/binary>>, V) || {K, V} <- CRVs],
     SIPHeaders = get_custom_sip_headers(Endpoint),
     SIPHeadersEl = [param_el(<<"dial-var-sip_h_", K/binary>>, V) || {K, V} <- SIPHeaders],
-    Params = [{<<"endpoint-dial-string">>, dial_string(Node, Endpoint, Id)}
+    Params = [{<<"endpoint-dial-string">>, dial_string(Endpoint)}
              ,{<<"endpoint-separator">>, kz_endpoint_separator()}
              ,{<<"jsonrpc-allowed-methods">>, <<"verto">>}
              ,{<<"jsonrpc-allowed-event-channels">>, <<"conference">>}
@@ -1622,18 +1738,10 @@ directory_resp_device_xml(Node, Endpoint, JObj) ->
     SectionEl = section_el(<<"directory">>, DomainEl),
     {'ok', xmerl:export([SectionEl], 'fs_xml')}.
 
--spec user_dial_string(kz_term:ne_binaries(), kz_term:ne_binary()) -> kz_term:ne_binary().
-user_dial_string([], _AccountId) ->
-    <<"error/no_endpoints">>;
-user_dial_string(Ids, AccountId) ->
-    kz_binary:join([list_to_binary(["kz/", M, "@", AccountId]) || M <- Ids], kz_endpoint_separator()).
-
-
 -spec directory_resp_user_xml(atom(), kz_json:object(), kz_json:object()) -> {'ok', iolist()}.
 directory_resp_user_xml(_Node, Endpoint, JObj) ->
     DomainName = directory_resp_domain(Endpoint, JObj),
     UserId = directory_resp_user_id(Endpoint, JObj),
-    Id = <<UserId/binary, "@", DomainName/binary>>,
 
     ProfileParams = get_profile_params(Endpoint),
     VariableEls = get_directory_variables(Endpoint),
@@ -1641,11 +1749,8 @@ directory_resp_user_xml(_Node, Endpoint, JObj) ->
     ProfileEls = [variable_el(K, V) || {K, V} <- ProfileParams],
     ProfileVariablesEl = variables_el('profile-variables', ProfileEls),
     UserProps = props:filter_undefined(user_el_props('undefined', UserId)),
-    Members = kz_json:get_list_value(<<"Members">>, Endpoint, []),
-    DialEndpoints = user_dial_string(Members, DomainName),
 
-    Params = [{<<"group-dial-string">>, <<"kz/", Id/binary>>}
-             ,{<<"endpoint-dial-string">>,  DialEndpoints}
+    Params = [{<<"endpoint-dial-string">>,  dial_string(Endpoint)}
              ,{<<"endpoint-separator">>, kz_endpoint_separator()}
              ,{<<"jsonrpc-allowed-methods">>, <<"verto">>}
              ,{<<"jsonrpc-allowed-event-channels">>, <<"conference">>}
@@ -1665,7 +1770,6 @@ directory_resp_user_xml(_Node, Endpoint, JObj) ->
 
 -spec directory_resp_group_ep_xml(atom(), kz_json:object(), kz_json:object()) -> {'ok', iolist()}.
 directory_resp_group_ep_xml(_Node, Endpoint, JObj) ->
-    lager:warning_unsafe("GROUP => ~s", [kz_json:encode(Endpoint, [pretty])]),
     DomainName = directory_resp_domain(Endpoint, JObj),
     GroupId = directory_resp_user_id(Endpoint, JObj),
     GroupProps = user_el_default_props(GroupId),
@@ -1675,8 +1779,7 @@ directory_resp_group_ep_xml(_Node, Endpoint, JObj) ->
                                Id = kz_json:get_ne_binary_value(<<"id">>, EP, <<"error">>),
                                Delay = kz_json:get_integer_value(<<"delay">>, EP, 0),
                                Timeout = kz_json:get_integer_value(<<"timeout">>, EP, 120),
-                               D = list_to_binary([
-                                                   "["
+                               D = list_to_binary(["["
                                                   ,"leg_delay_start=", kz_term:to_binary(Delay)
                                                   ,",leg_timeout=", kz_term:to_binary(Timeout)
                                                   ,"]",
@@ -1784,13 +1887,28 @@ location_el(Id, Value) ->
 directory_resp_location_xml(ProxyPath, Props, JObj) ->
     %% TODO
     %% sipinterface_1 => compute from Proxy-IP / Proxy-Port & networks
-    SIPInterface = ?DEFAULT_FS_PROFILE,
     Id = kzd_fetch:fetch_key_value(JObj),
-    Vars = [list_to_binary([K, "=", V]) || {K, V} <- [{<<"sip_route_uri">>, ProxyPath} | get_channel_params(Props)]],
-    Location = list_to_binary(["[^^!", kz_binary:join(Vars, <<"!">>), "]", "sofia", "/", SIPInterface, "/", Id]),
+    Location = directory_resp_location(Id, ProxyPath, Props),
     LocationEl = location_el(Id, Location),
     SectionEl = section_el(<<"directory">>,  LocationEl),
     {'ok', xmerl:export([SectionEl], 'fs_xml')}.
+
+-spec directory_resp_location_xml([{kz_term:ne_binary(), kz_term:proplist()}], kz_json:object()) -> {'ok', iolist()}.
+directory_resp_location_xml(Metas, JObj) ->
+    Id = kzd_fetch:fetch_key_value(JObj),
+    Location = kz_binary:join([directory_resp_location(Id, ProxyPath, Props) || {ProxyPath, Props} <- Metas], <<",">>),
+    LocationEl = location_el(Id, Location),
+    SectionEl = section_el(<<"directory">>,  LocationEl),
+    {'ok', xmerl:export([SectionEl], 'fs_xml')}.
+
+directory_resp_location(Id, ProxyPath, Props) ->
+    SIPInterface = ?DEFAULT_FS_PROFILE,
+    Params = get_channel_params(props:set_value(<<"Proxy-URI">>, ProxyPath, Props)),
+    Vars = directory_resp_location_vars(Params),
+    list_to_binary(["[^^!", kz_binary:join(Vars, <<"!">>), "]", "sofia", "/", SIPInterface, "/", Id]).
+
+directory_resp_location_vars(Props) ->
+    [encode_fs_val(K, V) || {K, V} <-  Props].
 
 -spec prompt_el(kz_types:xml_attrib_value(), kz_types:xml_attrib_value()) -> kz_types:xml_el().
 prompt_el(Id, Value) ->
@@ -1813,6 +1931,7 @@ kz_endpoint_separator() ->
 -define(EXCLUDE_VARIABLE_GROUPS, []).
 
 -define(DIRECTORY_VARIABLES_KEYS, [<<"Custom-Channel-Vars">>
+                                  ,<<"Custom-Application-Vars">>
                                   ,<<"Codecs">>
                                   ]).
 
@@ -1824,9 +1943,11 @@ get_directory_variables(JObj) ->
 -spec get_directory_variables(kz_term:ne_binary(), kz_json:object(), kz_types:xml_els()) -> kz_types:xml_els().
 get_directory_variables(<<"Codecs">>, Endpoint, Acc) ->
     codecs_els(Endpoint) ++ Acc;
+get_directory_variables(<<"Custom-Application-Vars">> = Key, Endpoint, Acc) ->
+    cavs_els(kz_json:get_json_value(Key, Endpoint)) ++ Acc;
 get_directory_variables(ObjectKey, JObj, Acc) ->
     Props = kz_json:to_proplist(ObjectKey, JObj),
-    get_directory_variables(Props, Acc).
+    get_directory_variables(kazoo_merge_vars(Props), Acc).
 
 -spec get_directory_variables(kz_term:api_terms(), kz_types:xml_els()) -> kz_types:xml_els().
 get_directory_variables(Props, Acc)
@@ -1840,6 +1961,8 @@ get_directory_variables(JObj, Acc) ->
     get_directory_variables(Props, Acc).
 
 -spec get_directory_variables_fold(kz_json:key(), kz_json:json_term()) -> kz_types:xml_el().
+get_directory_variables_fold(<<"Merged-", _/binary>> = Key, Value) ->
+    get_directory_variable(Key, Value);
 get_directory_variables_fold(Key, Value) ->
     case kz_json:is_json_object(Value)
         andalso not lists:member(Key, ?EXCLUDE_VARIABLE_GROUPS)
@@ -1857,7 +1980,7 @@ get_directory_variable({Key, Value}) ->
 
 -spec get_directory_variable(kz_json:key(), kz_json:json_term()) -> kz_types:xml_el().
 get_directory_variable(Key, Value) ->
-    get_directory_variable(get_channel_params_fold(Key, Value)).
+    get_directory_variable(get_channel_param(Key, Value)).
 
 -spec codecs_els(kz_json:object()) -> kz_types:xml_els().
 codecs_els(Endpoint) ->
@@ -1870,3 +1993,23 @@ codecs_els(Endpoint) ->
 codecs_el(Codecs) ->
     CodecsMap = [codec_mappings(Codec) || Codec <- Codecs, not kz_term:is_empty(Codec)],
     variable_el(<<"absolute_codec_string">> , kz_binary:join(CodecsMap, <<",">>)).
+
+cavs_els('undefined') -> [];
+cavs_els(CAVs) ->
+    kz_json:foldl(fun cav_el/3, [], CAVs).
+
+cav_el(Key, Value, Acc) ->
+    Name = list_to_binary([kazoo_cav_prefix(Value), Key]),
+    [get_directory_variable({Name, ecallmgr_util:maybe_sanitize_fs_value(Key, Value)}) | Acc].
+
+-spec encode_sip_diversions(kz_term:ne_binaries()) -> kz_term:ne_binary().
+encode_sip_diversions(Diversions) ->
+    case kz_app_config:is_true(?APP, <<"send_multiple_diversion_headers">>) of
+        'true' -> list_to_binary([<<"ARRAY::">>, kz_binary:join(Diversions, <<"|:">>)]);
+        'false' -> kz_binary:join(Diversions, <<",">>)
+    end.
+
+-spec encode_sip_multiparts_fold(kz_json:key(), kz_json:json_term(), iolist()) -> iolist().
+encode_sip_multiparts_fold(Key, Value, Vars) ->
+    lager:debug("setting multipart ~s on the channel", [Key]),
+    [encode_fs_val(<<"sip_multipart_", Key/binary>>, Value) | Vars].

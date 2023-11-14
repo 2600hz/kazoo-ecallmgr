@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2021, 2600Hz
+%%% @copyright (C) 2012-2023, 2600Hz
 %%% @doc
 %%% This Source Code Form is subject to the terms of the Mozilla Public
 %%% License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -10,8 +10,6 @@
 -module(ecallmgr_fs_node_sup).
 
 -behaviour(supervisor).
-
--include("ecallmgr.hrl").
 
 -export([start_link/2]).
 
@@ -33,6 +31,15 @@
 -export([init/1]).
 
 -include("ecallmgr.hrl").
+
+-define(NODE_MODULES,
+        [<<"node">>
+        ,<<"monitor">>
+        ,<<"event_stream_sup">>
+        ,<<"fetch_sup">>
+        ,<<"notify">>
+        ,<<"resource">>
+        ]).
 
 %%==============================================================================
 %% API functions

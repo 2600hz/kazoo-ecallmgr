@@ -1,0 +1,9 @@
+<definition name="conference-interaction">
+    <field name="Call-Interaction" type="static" serialize-as="object">
+       <fields>
+            <field name="Conference-Interaction-ID" as="Id" />
+            <field name="Conference-Interaction-Key" as="Key" />
+            <field name="Conference-Interaction-Timestamp" as="Timestamp" serialize-as="number"/>
+       </fields>
+    </field>
+</definition>

@@ -16,6 +16,8 @@
 	<field name="Fetch-Key-Value"/>
 	<field name="Fetch-Tag"/>
 
+	<field name="fetch-params" type="reference" />
+
 	<field name="Kazoo-Bundle" as="Fetch-Version" />
 	<!--
 	<field name="Kazoo-Version"/>
@@ -23,12 +25,10 @@
 	<field name="Kazoo-Release"/>
 	-->
 
-	<!--<field name="fetch-info-csh" type="reference" />-->
 	<field name="Custom-Channel-Vars" type="reference" />
 	<field name="Custom-Application-Vars" type="reference" />
 	<field name="freeswitch-url" type="reference" />
 	<field name="Control" type="reference" />
-	<field name="hunt-privacy" type="reference" />
 	<field name="Custom-SIP-Headers" type="reference" />
 	<field name="Custom-AUTH-Headers" type="reference" />
 	<field name="conference-config" type="reference" />

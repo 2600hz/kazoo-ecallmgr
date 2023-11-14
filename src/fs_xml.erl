@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2021, 2600Hz
+%%% @copyright (C) 2010-2023, 2600Hz
 %%% @doc XML-formatter for FreeSWITCH XML responses
 %%% Copy of xmerl/src/xmerl_xml.erl
 %%%
@@ -37,7 +37,7 @@
 %% exported. It does not appear in the structure itself.
 -spec '#root#'(any(), any(), list(), any()) -> iolist().
 '#root#'(Data, _Attrs, [], _E) ->
-    ["<document type=\"freeswitch/xml\">", Data, "</document>"].
+    ["<document type=\"freeswitch/xml\" node=\"", atom_to_list(node()), "\">", Data, "</document>"].
 
 %% The '#element#' function is the default handler for XML elements.
 -spec '#element#'(any(), any(), any(), any(), any()) -> iolist().

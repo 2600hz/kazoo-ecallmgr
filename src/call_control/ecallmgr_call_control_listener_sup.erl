@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2021, 2600Hz
+%%% @copyright (C) 2012-2023, 2600Hz
 %%% @doc
 %%% This Source Code Form is subject to the terms of the Mozilla Public
 %%% License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -48,6 +48,6 @@ init([]) ->
     SupFlags = {RestartStrategy, MaxRestarts, MaxSecondsBetweenRestarts},
     {'ok', {SupFlags, [?WORKER_ARGS_TYPE('ecallmgr_call_control_listener', [], 'temporary')]}}.
 
--spec start_listener(pid(), kz_term:ne_binary()) -> kz_types:startlink_ret().
+-spec start_listener(pid(), kz_term:api_ne_binary()) -> kz_types:startlink_ret().
 start_listener(Pid, Queue) ->
     supervisor:start_child(?MODULE, [Pid, Queue]).
