@@ -112,6 +112,8 @@
         ,hangup/1
         ]).
 
+-export([kamailio_uuids_sanity_check/0]).
+
 -include("ecallmgr.hrl").
 
 -elvis([{elvis_style, no_debug_call, disable}]).
@@ -772,3 +774,59 @@ not_system_config_acl(Name, AuthType) ->
 -spec print_and_log(string(), [any()]) -> 'ok'.
 print_and_log(FormatStr, Args) ->
     ?SUP_LOG_INFO(FormatStr, Args).
+
+-spec kamailio_uuids_sanity_check() -> 'ok'.
+kamailio_uuids_sanity_check() ->
+    _ = [begin
+             print_and_log("retrieving known Kamailio UUIDs from ~s", [Node]),
+             freeswitch:bgapi4(Node, 'kz_cache_list', "nodes", fun handle_kamailio_uuids/4, [Node])
+         end
+         || Node <- ecallmgr_fs_nodes:connected()
+        ],
+    print_and_log("waiting for known Kamailio UUIDs...", []).
+
+-spec handle_kamailio_uuids(atom(), kz_term:ne_binary(), kz_term:proplist(), list()) -> 'ok'.
+handle_kamailio_uuids('ok', Reply, _FSProps, [_JobId, Node]) ->
+    lager:debug("retrieved known Kamailio UUIDs of (~s) ~s with success : ~s"
+               ,[Node, _JobId, kz_log:redactor(Reply)]
+               ),
+    CoreUUIDs =
+        case re:run(Reply
+                   ,<<"((?:kamailio)s?.*)((Node)s?\":\")([^,]+)(\"+)(.*)((?:Core-UUID)s?\":\")([^,]+)(\")">>
+                   ,['global', {'capture', [4,8], 'binary'}]
+                   )
+        of
+            {'match', CoreUUIDList} ->
+                lists:flatmap(fun([KamailioNode, CoreUUID])->[{KamailioNode, CoreUUID}] end, CoreUUIDList);
+            _ -> []
+        end,
+    print_and_log("known Kamailio UUIDs of ~s : ~p", [Node, CoreUUIDs]),
+    compare_kamailio_uuids(Node, CoreUUIDs);
+
+handle_kamailio_uuids('error', Reply, _FSProps, [_JobId, Node]) ->
+    lager:debug("error retrieving known kamailio UUIDs of (~s) ~s : ~p : ", [Node, _JobId, Reply]),
+    print_and_log("unable to retrieve known Kamailio UUIDs of ~s", [Node]).
+
+-spec compare_kamailio_uuids(atom(), kz_term:proplist()) -> 'ok'.
+compare_kamailio_uuids(FSNode, KnownCoreUUIDs) ->
+    KzNodes = kz_nodes:whapp_runtime_info('kamailio'),
+    print_and_log("kamailio UUIDs from heartbeat: ~p", [KzNodes]),
+    MissingUUIDS =
+        lists:foldl(fun({KzNode, KzCoreUUID}, Acc) ->
+                            determine_missing_kamailio_uuids(KnownCoreUUIDs, KzNode, KzCoreUUID, Acc)
+                    end
+                   ,[]
+                   ,KzNodes
+                   ),
+    case MissingUUIDS of
+        [] -> print_and_log("there are no missing Kamailio UUIDS", []);
+        MissingUUIDS -> print_and_log("missing Kamailio UUID(s) of ~s is/are : ~p", [FSNode, MissingUUIDS])
+    end.
+
+-spec determine_missing_kamailio_uuids(kz_term:proplist(), atom(), kz_term:ne_binary(), kz_term:proplist()) ->
+          kz_term:proplist().
+determine_missing_kamailio_uuids(KnownCoreUUIDs, KzNode, KzCoreUUID, MissingUUIDList) ->
+    case props:get_binary_value(KzNode, KnownCoreUUIDs) of
+        KzCoreUUID -> MissingUUIDList;
+        _Else -> [{KzNode, KzCoreUUID} | MissingUUIDList]
+    end.

@@ -45,6 +45,7 @@
 | `hangup/1` | `(UUID)` | |
 | `hangup_long_running_channels/0` |  | |
 | `hangup_long_running_channels/1` | `(MaxAge)` | |
+| `kamailio_uuids_sanity_check/0` |  | |
 | `limit_channel_uptime/1` | `(MaxAge)` | |
 | `limit_channel_uptime/2` | `(MaxAge,AsDefault)` | |
 | `list_fs_nodes/0` |  | |
