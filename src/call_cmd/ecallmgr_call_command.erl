@@ -887,11 +887,13 @@ maybe_set_nospeak_flags(Node, UUID, JObj) ->
                           ,{<<"deaf">>, <<"Deaf">>}
                           ,{<<"moderator">>, <<"Moderator">>}
                           ,{<<"vmute">>, <<"Video-Mute">>}
+                          ,{<<"endconf">>, <<"Endconf">>}
                           ]).
 
 -spec get_conference_flags(kz_json:object()) -> binary().
 get_conference_flags(JObj) ->
-    case kz_json:to_proplist(JObj) of
+    JoinOptions = kz_json:get_ne_json_value(<<"Join-Options">>, JObj, kz_json:new()),
+    case kz_json:to_proplist(JoinOptions) of
         [] -> <<>>;
         [{_Key,_Val}=KV|L] ->
             Flags = lists:foldl(fun maybe_add_conference_flag/2, [<<>>], L),
