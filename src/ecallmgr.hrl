@@ -312,7 +312,6 @@
                               ,{<<"RECORD_SILENCE_THRESHOLD">>, <<"RECORD_SILENCE_THRESHOLD">>}
                               ,{<<"RECORD_INITIAL_TIMEOUT_MS">>, <<"RECORD_INITIAL_TIMEOUT_MS">>}
                               ,{<<"RECORD_FINAL_TIMEOUT_MS">>, <<"RECORD_FINAL_TIMEOUT_MS">>}
-                              ,{<<"RECORD_MIN_SEC">>, <<"RECORD_MIN_SEC">>}
                               ,{<<"RTCP-MUX">>, <<"rtcp_mux">>}
                               ,{<<"RTP-Secure-Audio-Confirmed">>, <<"rtp_secure_media_confirmed_audio">>}
                               ,{<<"RTP-Secure-Media">>, <<"rtp_secure_media">>}
