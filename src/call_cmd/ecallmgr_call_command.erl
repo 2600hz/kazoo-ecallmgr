@@ -1214,40 +1214,26 @@ record_app_vars(UUID, JObj) ->
     RecordMinSec = kz_json:get_binary_value(<<"Record-Min-Sec">>, JObj),
     SampleRate = get_sample_rate(JObj),
 
+    Threshold =  kz_json:get_ne_binary_value([<<"Record-Silence-Detection">>, <<"Threshold">>], JObj),
+    InitialTimeout = kz_json:get_ne_binary_value([<<"Record-Silence-Detection">>, <<"Initial-Timeout">>], JObj),
+    FinalTimeout = kz_json:get_ne_binary_value([<<"Record-Silence-Detection">>, <<"Final-Timeout">>], JObj),
+
     Vars = lists:foldl(fun(F, V) -> F(V) end
                       ,[{<<"RECORD_APPEND">>, <<"true">>}
                        ,{<<"RECORD_STEREO">>, should_record_stereo(JObj)}
                        ,{<<"RECORD_SOFTWARE">>, ecallmgr_util:fs_arg_encode(?RECORD_SOFTWARE)}
+                       ,{<<"RECORD_SILENCE_THRESHOLD">>, Threshold}
+                       ,{<<"RECORD_INITIAL_TIMEOUT_MS">>, InitialTimeout}
+                       ,{<<"RECORD_FINAL_TIMEOUT_MS">>, FinalTimeout}
                        ,{<<"enable_file_write_buffering">>, <<"false">>}
                        ,{<<"record_min_sec">>, RecordMinSec}
                        ,{<<"record_sample_rate">>, kz_term:to_binary(SampleRate)}
                        ,{<<"Recording-Follow-Transfer">>, record_follow_transfer(JObj)}
                        ,{<<"Controller-App-Name">>, kz_api:app_name(JObj)}
-                       | record_call_silence_vars(JObj)
                        ]
                       ,Routines
                       ),
     app_variables(UUID, Vars).
-
--spec record_call_silence_vars(kz_json:object()) -> kz_term:proplist().
-record_call_silence_vars(JObj) ->
-    Threshold = kz_json:get_integer_value([<<"Record-Silence-Detection">>, <<"Threshold">>], JObj, 200),
-    InitialTimeout = kz_json:get_integer_value([<<"Record-Silence-Detection">>, <<"Initial-Timeout">>], JObj, 0),
-    FinalTimeout = kz_json:get_integer_value([<<"Record-Silence-Detection">>, <<"Final-Timeout">>], JObj, 5),
-    case kz_json:is_true([<<"Record-Silence-Detection">>, <<"Enabled">>], JObj) of
-        'false' ->
-            [];
-        'true' when FinalTimeout < InitialTimeout ->
-            lager:warning("silence initial timeout ~b is lower than silence final timeout ~b, ignoring silence options"
-                         ,[InitialTimeout, FinalTimeout]
-                         ),
-            [];
-        'true' ->
-            [{<<"RECORD_SILENCE_THRESHOLD">>, kz_term:to_binary(Threshold)}
-            ,{<<"RECORD_INITIAL_TIMEOUT_MS">>, kz_term:to_binary(InitialTimeout)}
-            ,{<<"RECORD_FINAL_TIMEOUT_MS">>, kz_term:to_binary(FinalTimeout)}
-            ]
-    end.
 
 -spec record_follow_transfer(kz_json:object()) -> boolean().
 record_follow_transfer(JObj) ->
