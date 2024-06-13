@@ -1214,9 +1214,9 @@ record_app_vars(UUID, JObj) ->
     RecordMinSec = kz_json:get_binary_value(<<"Record-Min-Sec">>, JObj),
     SampleRate = get_sample_rate(JObj),
 
-    Threshold =  kz_json:get_ne_binary_value([<<"Record-Silence-Detection">>, <<"Threshold">>], JObj),
-    InitialTimeout = kz_json:get_ne_binary_value([<<"Record-Silence-Detection">>, <<"Initial-Timeout">>], JObj),
-    FinalTimeout = kz_json:get_ne_binary_value([<<"Record-Silence-Detection">>, <<"Final-Timeout">>], JObj),
+    Threshold =  kz_json:get_integer_value([<<"Record-Silence-Detection">>, <<"Threshold">>], JObj),
+    InitialTimeout = kz_json:get_integer_value([<<"Record-Silence-Detection">>, <<"Initial-Timeout">>], JObj),
+    FinalTimeout = kz_json:get_integer_value([<<"Record-Silence-Detection">>, <<"Final-Timeout">>], JObj),
 
     Vars = lists:foldl(fun(F, V) -> F(V) end
                       ,[{<<"RECORD_APPEND">>, <<"true">>}
