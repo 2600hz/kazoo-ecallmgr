@@ -887,7 +887,8 @@ maybe_set_nospeak_flags(Node, UUID, JObj) ->
                           ,{<<"deaf">>, <<"Deaf">>}
                           ,{<<"moderator">>, <<"Moderator">>}
                           ,{<<"vmute">>, <<"Video-Mute">>}
-                          ,{<<"endconf">>, <<"End-Conference">>}
+                          ,{<<"endconf">>, <<"End-On-Leave">>}
+                          ,{<<"mandatory_member_endconf">>, <<"End-On-Last-Member-Leave">>}
                           ]).
 
 -spec get_conference_flags(kz_json:object()) -> binary().
