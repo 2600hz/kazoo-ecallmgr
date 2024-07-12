@@ -533,6 +533,14 @@ get_fs_app(_Node, _UUID, JObj, <<"detect_speech">>) ->
         'true' -> detect_speech_app(JObj)
     end;
 
+get_fs_app(_Node, _UUID, JObj, <<"send_display">>) ->
+    case kapi_dialplan:send_display_v(JObj) of
+        'false' -> {'error', <<"send_display failed to execute as JObj did not validate">>};
+        'true' ->
+            CallerName = kz_json:get_value(<<"Caller-Name">>, JObj),
+            {<<"send_display">>, CallerName}
+    end;
+
 get_fs_app(_Node, _UUID, _JObj, _App) ->
     lager:debug("unknown application ~s", [_App]),
     {'error', <<"application unknown">>}.
