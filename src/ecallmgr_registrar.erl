@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2011-2023, 2600Hz
+%%% @copyright (C) 2011-2024, 2600Hz
 %%% @doc Listener for reg_success, and reg_query AMQP requests
 %%% @author James Aimonetti
 %%%
@@ -144,7 +144,6 @@ start_link() ->
                             ,{'queue_name', ?REG_QUEUE_NAME}
                             ,{'queue_options', ?REG_QUEUE_OPTIONS}
                             ,{'consume_options', ?REG_CONSUME_OPTIONS}
-                            ,{'auto_gc', 'false'}
                             ]
                            ,[]
                            ).
