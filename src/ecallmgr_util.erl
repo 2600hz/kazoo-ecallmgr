@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2023, 2600Hz
+%%% @copyright (C) 2010-2024, 2600Hz
 %%% @doc Various utilities specific to ecallmgr. More general utilities go
 %%% in kazoo_util.erl
 %%%
@@ -237,7 +237,8 @@ send_cmd(Node, UUID, App, FSApp, Args, EventArgs) ->
                ),
     Result.
 
--spec send_cmds(atom(), kz_term:ne_binary(), kz_term:ne_binary(), [{kz_term:text(), kz_term:text()}]) -> send_cmd_ret().
+-spec send_cmds(atom(), kz_term:ne_binary(), kz_term:ne_binary(), [{kz_term:text(), kz_term:text()}]) ->
+          freeswitch:fs_api_return().
 send_cmds(Node, UUID, App, Cmds) ->
     Commands = [begin
                     {FSApp, Args, EventArgs} = case Cmd of
@@ -708,19 +709,19 @@ maybe_sanitize_fs_value(Key, Val) when not is_binary(Val) ->
     maybe_sanitize_fs_value(Key, kz_term:to_binary(Val));
 maybe_sanitize_fs_value(Key, Val) ->
     case get_fs_transform_value(Key) of
-        undefined -> Val;
+        'undefined' -> Val;
         Transform -> transform_fs_value(Transform, Val)
     end.
 
-transform_fs_value({prepend, Prepend}, Val) ->
+transform_fs_value({'prepend', Prepend}, Val) ->
     list_to_binary([Prepend, " ", Val]);
-transform_fs_value(media, Val) ->
+transform_fs_value('media', Val) ->
     media_path(Val, 'extant', get('callid'), kz_json:new()).
 
 get_fs_transform_value(Key) ->
     case lists:keyfind(Key, 1, ?SPECIAL_CHANNEL_TRANSFORMS) of
         {_, Transform} -> Transform;
-        _Else -> undefined
+        _Else -> 'undefined'
     end.
 
 %%------------------------------------------------------------------------------

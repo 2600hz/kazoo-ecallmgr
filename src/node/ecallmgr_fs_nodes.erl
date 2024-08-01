@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2023, 2600Hz
+%%% @copyright (C) 2010-2024, 2600Hz
 %%% @doc When connecting to a FreeSWITCH node, we create three processes: one to
 %%% handle authentication (directory) requests; one to handle route (dialplan)
 %%% requests, and one to monitor the node and various stats about the node.
@@ -178,7 +178,7 @@ do_flush(Args) ->
     do_flush(nodes_to_flush(), Args).
 
 -spec do_flush([atom()], binary()) -> 'ok'.
-do_flush([], _Args) -> ok;
+do_flush([], _Args) -> 'ok';
 do_flush(Nodes, Args) ->
     lager:debug("flushing xml cache ~s from ~B erlang connected FreeSWITCH servers", [Args, length(Nodes)]),
     lists:foreach(fun(N) -> freeswitch:api(N, 'xml_flush_cache', Args) end, Nodes).
@@ -188,11 +188,11 @@ nodes_to_flush() ->
     [K || {K, Node} <- fs_nodes(), filter_release(Node)].
 
 -spec filter_release(fs_node()) -> boolean().
-filter_release(#node{connected = false}) -> false;
-filter_release(#node{connected = true, client_version = ClientVersion}) ->
+filter_release(#node{connected = 'false'}) -> 'false';
+filter_release(#node{connected = 'true', client_version = ClientVersion}) ->
     case freeswitch:release(ClientVersion) of
-        {_, _, <<"community">>} -> true;
-        _ -> false
+        {_, _, <<"community">>} -> 'true';
+        _ -> 'false'
     end.
 
 -spec is_node_up(atom()) -> boolean().

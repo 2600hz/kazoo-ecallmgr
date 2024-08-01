@@ -245,7 +245,7 @@ lookup_meta_path(<<Realm/binary>>, <<Username/binary>>) ->
                              },
     case ets:match_object(?MODULE, MatchSpec) of
         [] -> {'error', 'not_found'};
-        Regs -> {ok, [{Proxy, proxy_vars(Reg)} || #registration{proxy = Proxy}=Reg <- Regs]}
+        Regs -> {'ok', [{Proxy, proxy_vars(Reg)} || #registration{proxy = Proxy}=Reg <- Regs]}
     end.
 
 -spec proxy_vars_options(registration()) -> map().

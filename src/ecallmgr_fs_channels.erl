@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2013-2023, 2600Hz
+%%% @copyright (C) 2013-2024, 2600Hz
 %%% @doc Track the FreeSWITCH channel information, and provide accessors
 %%% @author James Aimonetti
 %%% @author Karl Anderson
@@ -1330,30 +1330,30 @@ field_mapper(Map) ->
     field_mapper_fun(fields(Map)).
 
 fields(Map) ->
-    case maps:get(fields, Map, undefined) of
+    case maps:get('fields', Map, 'undefined') of
         List when is_list(List) -> [kz_term:to_atom(Item) || Item <- List];
         _Other -> default_fields()
     end.
 
 default_fields() ->
-    [switch_url
-    ,is_onhold
-    ,destination
-    ,other_leg
+    ['switch_url'
+    ,'is_onhold'
+    ,'destination'
+    ,'other_leg'
     ].
 
 field_mapper_fun(RequestedFields) ->
-    Fields = lists:zip(lists:seq(2, record_info(size, channel)), record_info(fields, channel)),
+    Fields = lists:zip(lists:seq(2, record_info('size', 'channel')), record_info('fields', 'channel')),
     FilteredFields = lists:filter(fun({_, Name}) -> lists:member(Name, RequestedFields) end, Fields),
     fun(Record) ->
             lists:foldl(fun({I, E}, Acc) -> Acc#{E => element(I, Record) } end, #{}, FilteredFields)
     end.
 
 channels_query_arg(Arg, Map) ->
-    case maps:get(Arg, Map,  undefined) of
+    case maps:get(Arg, Map, 'undefined') of
         EndpointId when is_binary(EndpointId) -> list_to_tuple(binary:split(EndpointId, <<"@">>));
         Endpoint when is_tuple(Endpoint) -> Endpoint;
-        _Other -> undefined
+        _Other -> 'undefined'
     end.
 
 -spec channels(kz_json:object() | map()) -> map().
@@ -1362,10 +1362,10 @@ channels(Map) when is_map(Map) ->
     Direction = maps:get('direction', Map, 'undefined'),
     Mapper = field_mapper(Map),
     Routines = [{'account', Account, Direction, fun account_match_spec/2, Mapper}
-               ,{'device', channels_query_arg(device, Map), Direction, fun device_match_spec/2, Mapper}
-               ,{'endpoint', channels_query_arg(endpoint, Map), Direction, fun endpoint_match_spec/2,Mapper}
-               ,{'owner', channels_query_arg(owner, Map), Direction, fun owner_match_spec/2, Mapper}
-               ,{'user', channels_query_arg(user, Map), Direction, fun owner_match_spec/2, Mapper}
+               ,{'device', channels_query_arg('device', Map), Direction, fun device_match_spec/2, Mapper}
+               ,{'endpoint', channels_query_arg('endpoint', Map), Direction, fun endpoint_match_spec/2,Mapper}
+               ,{'owner', channels_query_arg('owner', Map), Direction, fun owner_match_spec/2, Mapper}
+               ,{'user', channels_query_arg('user', Map), Direction, fun owner_match_spec/2, Mapper}
                ],
     maps:from_list(lists:filtermap(fun channels_fun/1, Routines));
 channels(JObj) ->
@@ -1389,16 +1389,21 @@ channels(AccountId, OwnerId, DeviceId) ->
 
 -spec channels(kz_term:ne_binary(), kz_term:api_ne_binary(), kz_term:api_ne_binary(), kz_term:api_ne_binary()) -> map().
 channels(AccountId, OwnerId, DeviceId, Direction) ->
-    channels(#{account => AccountId, owner => OwnerId, device => DeviceId, direction => Direction}).
+    channels(#{account => AccountId
+              ,owner => OwnerId
+              ,device => DeviceId
+              ,direction => Direction
+              }).
 
-channels_fun({_, undefined, _, _, _}) -> false;
-channels_fun({_, {_, undefined}, _, _, _}) -> false;
+channels_fun({_, 'undefined', _, _, _}) -> 'false';
+channels_fun({_, {_, 'undefined'}, _, _, _}) -> 'false';
 channels_fun({Header, Id, Direction, Fun, Mapper}) ->
     MatchSpec = Fun(Id, Direction),
-    {true, {Header, channels_map(ets:select(?CHANNELS_TBL, MatchSpec), Mapper)}}.
+    {'true', {Header, channels_map(ets:select(?CHANNELS_TBL, MatchSpec), Mapper)}}.
 
+channels_map([], _) -> #{};
 channels_map(Channels, Mapper) ->
-    lists:foldl(fun(#channel{uuid = UUID} = Record, Acc) -> Acc#{UUID => Mapper(Record)} end, #{}, Channels).
+    maps:from_list([{UUID, Mapper(Record)} || #channel{uuid = UUID} = Record <- Channels]).
 
 account_match_spec(AccountId, 'undefined') ->
     [{#channel{account_id = '$2', _ = '_'}

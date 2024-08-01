@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2023, 2600Hz
+%%% @copyright (C) 2010-2024, 2600Hz
 %%% @doc Execute node commands
 %%% @author Luis Azedo
 %%%
@@ -43,8 +43,8 @@ exec_cmd(<<"call_command">>, 'undefined', JObj, _Node, _Options) ->
     reply_error(<<"no arguments">>, JObj);
 exec_cmd(<<"call_command">>, Cmd, JObj, Node, _Options) ->
     case call_command_allowed(kz_api:app_name(JObj), kapi_dialplan:application_name(Cmd)) of
-        true -> call_command(Node, Cmd, JObj);
-        false -> reply_error(<<"not allowed">>, JObj)
+        'true' -> call_command(Node, Cmd, JObj);
+        'false' -> reply_error(<<"not allowed">>, JObj)
     end;
 
 exec_cmd(Cmd, _Args, JObj, _Node, _Options) ->
@@ -81,7 +81,7 @@ reply_success(JObj, Response) ->
     API = kz_json:set_values(Values, kz_api:remove_defaults(JObj)),
     send_reply(kz_api:server_id(JObj), API).
 
-send_reply(undefined, _Payload) -> ok;
+send_reply('undefined', _Payload) -> 'ok';
 send_reply(Queue, Payload) ->
     kapi_switch:publish_fs_reply(Queue, Payload).
 
@@ -117,10 +117,9 @@ call_command_allowed(SenderApplication, CommandApplication) ->
     kz_app_config:is_true(?APP, [<<"node_call_command_allowed_applications">>, SenderApplication, CommandApplication]).
 
 call_command(Node, Cmd, JObj) ->
-    freeswitch:call_cmd_sync(true),
+    freeswitch:call_cmd_sync('true'),
     case ecallmgr_call_command:exec_cmd(Node, kz_api:call_id(JObj), Cmd) of
-        ok -> reply_success(JObj, [{<<"Call-Command-Result">>, <<"ok">>}]);
-        {ok, Result} -> reply_success(JObj, [{<<"Call-Command-Result">>, Result}]);
-        {error, Error} -> reply_error(Error, JObj);
-        Other -> reply_error(term_to_binary(Other), JObj)
+        'ok' -> reply_success(JObj, [{<<"Call-Command-Result">>, <<"ok">>}]);
+        {'ok', Result} -> reply_success(JObj, [{<<"Call-Command-Result">>, Result}]);
+        {'error', Error} -> reply_error(Error, JObj)
     end.

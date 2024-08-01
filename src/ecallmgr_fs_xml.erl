@@ -1696,7 +1696,7 @@ directory_resp_resource_xml(_Node, Endpoint, JObj) ->
     ProfileVariablesEl = variables_el('profile-variables', ProfileEls),
 
     Expires = kz_json:get_integer_value(<<"Expires">>, Endpoint),
-    UserProps = user_el_props(undefined, UserId, Expires, Revision),
+    UserProps = user_el_props('undefined', UserId, Expires, Revision),
 
     UserEl = user_el(UserProps, [VariablesEl, ProfileVariablesEl]),
     DomainEl = domain_el(DomainName, UserEl),
@@ -1752,7 +1752,7 @@ directory_resp_user_xml(_Node, Endpoint, JObj) ->
     ProfileVariablesEl = variables_el('profile-variables', ProfileEls),
 
     Expires = kz_json:get_integer_value(<<"Expires">>, Endpoint),
-    UserProps = user_el_props(undefined, UserId, Expires, Revision),
+    UserProps = user_el_props('undefined', UserId, Expires, Revision),
 
     Params = [{<<"endpoint-dial-string">>,  dial_string(Endpoint)}
              ,{<<"endpoint-separator">>, kz_endpoint_separator()}
@@ -1779,7 +1779,7 @@ directory_resp_group_ep_xml(_Node, Endpoint, JObj) ->
     Revision = kz_json:get_ne_binary_value(<<"Revision">>, Endpoint),
 
     Expires = kz_json:get_integer_value(<<"Expires">>, Endpoint),
-    GroupProps = user_el_props(undefined, GroupId, Expires, Revision),
+    GroupProps = user_el_props('undefined', GroupId, Expires, Revision),
 
     VariableEls = get_directory_variables(Endpoint),
     Members = kz_json:get_list_value(<<"Members">>, Endpoint, []),
@@ -1809,7 +1809,7 @@ directory_resp_group_xml(_Node, Endpoint, JObj) ->
 
     Expires = kz_json:get_integer_value(<<"Expires">>, Endpoint),
     GroupProps = [{<<"name">>, GroupId}
-                 | user_el_props(undefined, GroupId, Expires, Revision)
+                 | user_el_props('undefined', GroupId, Expires, Revision)
                  ],
 
     Members = kz_json:get_json_value(<<"Members">>, Endpoint, kz_json:new()),

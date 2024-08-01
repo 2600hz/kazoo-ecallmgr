@@ -27,9 +27,8 @@
 
 -spec exec_cmd(atom(), kz_term:ne_binary(), kz_json:object()) ->
           'ok' |
-          'error' |
-          ecallmgr_util:send_cmd_ret() |
-          [ecallmgr_util:send_cmd_ret(),...].
+          freeswitch:fs_api_return() |
+          ecallmgr_util:send_cmd_ret().
 exec_cmd(Node, UUID, JObj) ->
     exec_cmd(Node, UUID, JObj, kz_api:call_id(JObj)).
 
@@ -1181,12 +1180,12 @@ record_call(UUID, <<"start">>, JObj) ->
                  ],
 
     case record_call_track_media_recording(JObj) of
-        true ->
+        'true' ->
             [{<<"unshift">>, <<"Media-Recordings=", RecordingId/binary>>}
             ,{<<"unshift">>, <<"Media-Recordings-Name=", RecordingName/binary>>}
             ,{<<"record_session">>, list_to_binary(RecordArgs)}
             ];
-        false ->
+        'false' ->
             {<<"record_session">>, list_to_binary(RecordArgs)}
     end;
 record_call(_UUID, <<"stop">>, JObj) ->
@@ -1197,7 +1196,7 @@ record_call(_UUID, <<"stop">>, JObj) ->
     {<<"stop_record_session">>, RecordingName}.
 
 record_call_track_media_recording(JObj) ->
-    kz_json:is_true(<<"Track-Media-Recording">>, JObj, true).
+    kz_json:is_true(<<"Track-Media-Recording">>, JObj, 'true').
 
 -spec record_call_limit(kz_json:object()) -> integer().
 record_call_limit(JObj) ->
@@ -1239,7 +1238,7 @@ record_app_vars(UUID, JObj) ->
 
 -spec record_follow_transfer(kz_json:object()) -> boolean().
 record_follow_transfer(JObj) ->
-    kz_json:is_true(<<"Follow-Transfer">>, JObj, false).
+    kz_json:is_true(<<"Follow-Transfer">>, JObj, 'false').
 
 -spec record_call_args(kz_json:object()) -> binary().
 record_call_args(JObj) ->
