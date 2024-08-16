@@ -232,6 +232,7 @@ to_props(Channel) ->
       ,{<<"to_tag">>, Channel#channel.to_tag}
       ,{<<"username">>, Channel#channel.username}
       ,{<<"uuid">>, Channel#channel.uuid}
+      ,{<<"call_id">>, Channel#channel.uuid}
       ]).
 
 -spec to_api_json(kz_term:ne_binary() | channel()) -> kz_json:object().
