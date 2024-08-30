@@ -1064,7 +1064,9 @@ maybe_add_terminators(Acc, JObj) ->
 maybe_add_timeout_sec(Acc, JObj) ->
     case kz_json:get_integer_value(<<"Playback-Timeout">>, JObj) of
         'undefined' -> Acc;
-        Timeout -> [{<<"playback_timeout_sec">>, Timeout} | Acc]
+        Timeout -> [{<<"playback_timeout_sec">>, Timeout}
+                    ,{<<"playback_timeout_as_success">>, 'true'}
+                   | Acc]
     end.
 
 %%------------------------------------------------------------------------------
