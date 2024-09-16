@@ -1,0 +1,5 @@
+  - 'ecallmgr: Manage resource requests and interface with FreeSWITCH':
+    - 'doc/README.md'
+    - 'doc/acls.md'
+    - 'doc/config.md'
+    # - 'doc/maintenance.md'
