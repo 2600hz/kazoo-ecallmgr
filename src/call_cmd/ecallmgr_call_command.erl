@@ -885,6 +885,7 @@ maybe_set_nospeak_flags(Node, UUID, JObj) ->
 -define(CONFERENCE_FLAGS, [{<<"mute">>, <<"Mute">>}
                           ,{<<"deaf">>, <<"Deaf">>}
                           ,{<<"moderator">>, <<"Moderator">>}
+                          ,{<<"wait-mod">>, <<"Wait-Moderator">>}
                           ,{<<"vmute">>, <<"Video-Mute">>}
                           ,{<<"endconf">>, <<"End-On-Leave">>}
                           ,{<<"mandatory_member_endconf">>, <<"End-On-Last-Member-Leave">>}
@@ -898,7 +899,7 @@ get_conference_flags(JObj) ->
             Flags = lists:foldl(fun maybe_add_conference_flag/2, [<<>>], L),
             All = case maybe_add_conference_flag(KV, []) of
                       [] -> tl(Flags);
-                      [<<",">> | T] -> [T | Flags];
+                      [<<"|">> | T] -> [T | Flags];
                       Fs -> [Fs | Flags]
                   end,
             iolist_to_binary(["+flags{", All, "}"])
@@ -907,7 +908,7 @@ get_conference_flags(JObj) ->
 maybe_add_conference_flag({K, V}, Acc) ->
     case lists:keyfind(K, 2, ?CONFERENCE_FLAGS) of
         'false' -> Acc;
-        {FSFlag, _} when V =:= 'true' -> [<<",">>, FSFlag | Acc];
+        {FSFlag, _} when V =:= 'true' -> [<<"|">>, FSFlag | Acc];
         _ -> Acc
     end.
 
