@@ -35,4 +35,9 @@
 			<filter name="Action" type="include" compare="value" value="conference-create" />
 		</filters>
 	</field>
+
+	<field name="Milliseconds-Elapsed" as="File-MilliSeconds" serialize-as="number" />
+	<field name="Path" as="File-Path" />
+	<field name="Record-File-Size" as="File-Size" serialize-as="number" />
+
 </definition>
