@@ -532,6 +532,12 @@ get_fs_app(_Node, _UUID, JObj, <<"detect_speech">>) ->
         'true' -> detect_speech_app(JObj)
     end;
 
+get_fs_app(_Node, UUID, JObj, <<"stream">>) ->
+    case kapi_dialplan:stream_v(JObj) of
+        'false' -> {'error', <<"stream failed to execute as JObj did not validate">>};
+        'true' -> stream(UUID, JObj)
+    end;
+
 get_fs_app(_Node, _UUID, _JObj, _App) ->
     lager:debug("unknown application ~s", [_App]),
     {'error', <<"application unknown">>}.
@@ -1655,3 +1661,30 @@ redirect_app_fixup_node(Node) ->
 
 redirect_app_fixup_url(SipUrl) ->
     binary:replace(SipUrl, <<"mod_sofia@">>, <<>>).
+
+-spec stream(kz_term:ne_binary(), kz_json:object()) -> fs_app().
+stream(UUID, JObj) ->
+    Action = kz_json:get_ne_binary_value(<<"Action">>, JObj),
+    stream(UUID, Action, JObj).
+
+-spec stream(kz_term:ne_binary(), kz_term:ne_binary(), kz_json:object()) -> fs_apps().
+stream(UUID, <<"start">>, JObj) ->
+    StreamURL = kz_json:get_ne_binary_value(<<"Stream-URL">>, JObj),
+    ChannelMix = case kz_json:is_true(<<"Channel-As-Stereo">>, JObj, 'true') of
+                     'true' -> <<"stereo">>;
+                     'false' -> <<"mixed">>
+                 end,
+    SampleRate = kz_json:get_ne_binary_value(<<"Sample-Rate">>, JObj, <<"8k">>),
+    Metadata = case kz_json:get_ne_json_value(<<"Connect-Payload">>, JObj) of
+                   'undefined' -> <<>>;
+                   PayloadJObj -> kz_json:encode(PayloadJObj)
+               end,
+
+    StreamArgs = [UUID, <<"start">>, StreamURL, ChannelMix, SampleRate, Metadata],
+
+    {<<"kz_uuid_audio_fork">>, kz_binary:join(StreamArgs, <<" ">>)};
+stream(UUID, Action, JObj) ->
+    %% Action: pause, resume, stop
+    StreamArgs = [UUID, Action, kz_json:get_ne_binary_value(<<"Stream-ID">>, JObj, <<"all">>)],
+
+    {<<"kz_uuid_audio_fork">>, kz_binary:join(StreamArgs, <<" ">>)}.
