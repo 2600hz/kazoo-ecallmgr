@@ -65,6 +65,27 @@ process_event(<<"conference-destroy">>, JObj, Node) ->
     _ = ecallmgr_fs_conferences:destroy(InstanceId),
     _ = ecallmgr_conference_control_sup:stop_conference_control(Node, ConferenceId, InstanceId);
 
+process_event(<<"start-recording">>, JObj, Node) ->
+    lager:info("conference recording started"),
+    Profile = kz_json:get_binary_value(<<"Profile">>, JObj),
+    AccountId = kz_json:get_binary_value(<<"Account-ID">>, JObj),
+    ConferenceName = kz_json:get_binary_value(<<"Conference-ID">>, JObj),
+    Data = ecallmgr_fs_fetch_configuration_conference:profile_param(Node, AccountId, ConferenceName, Profile, <<"recording-metadata">>),
+    case Data of
+        'undefined' -> 'ok';
+        _ ->
+            CommandReq =
+                [{<<"Conference-ID">>, ConferenceName}
+                ,{<<"Conference-Var">>, <<"Recording-Data">>}
+                ,{<<"Conference-Val">>, Data}
+                ,{<<"Application-Name">>, <<"setvar">>}
+                | kz_api:default_headers(?APP_NAME, ?APP_VERSION)
+                ],
+            kapi_conference:publish_fs_conference_setvar(ConferenceName, CommandReq)
+    end;
+process_event(<<"stop-recording">>, _JObj, _Node) ->
+    lager:info("conference recording stopped");
+
 process_event(<<"add-member">>, JObj, Node) ->
     _ = set_participant_interaction_id(Node, JObj),
     ecallmgr_fs_conferences:participant_create(JObj, Node);

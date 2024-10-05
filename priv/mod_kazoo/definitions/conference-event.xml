@@ -36,8 +36,6 @@
 		</filters>
 	</field>
 
-	<field name="Milliseconds-Elapsed" as="File-MilliSeconds" serialize-as="number" />
-	<field name="Path" as="File-Path" />
-	<field name="Record-File-Size" as="File-Size" serialize-as="number" />
+	<field name="conference-recording-vars" type="reference" />
 
 </definition>

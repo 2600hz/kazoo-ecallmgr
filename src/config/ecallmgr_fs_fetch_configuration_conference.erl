@@ -16,6 +16,8 @@
 
 -export([conference/1]).
 
+-export([profile_param/5]).
+
 -include("ecallmgr.hrl").
 
 
@@ -141,3 +143,20 @@ fetch_conference_profile(Node, Profile, Conference, AccountId, Ctx) ->
 send_conference_profile_xml(XmlResp, #{node := Node} = Ctx) ->
     lager:debug("sending conference profile XML to ~s: ~s", [Node, XmlResp]),
     freeswitch:fetch_reply(Ctx#{reply => iolist_to_binary(XmlResp)}).
+
+-spec profile_param(kz_term:ne_binary(), kz_term:ne_binary(), kz_term:ne_binary(), kz_term:ne_binary(), kz_term:ne_binary()) -> kz_term:api_binary().
+profile_param(Node, AccountId, ConferenceName, Profile, Param) ->
+    Cmd = [{<<"Request">>, <<"Conference">>}
+          ,{<<"Profile">>, Profile}
+          ,{<<"Conference-ID">>, ConferenceName}
+          ,{<<"Account-ID">>, AccountId}
+          | kz_api:default_headers(?APP_NAME, ?APP_VERSION)
+          ],
+
+    {'ok', Resp} = kz_amqp_worker:call(Cmd
+                                      ,fun kapi_conference:publish_config_req/1
+                                      ,fun kapi_conference:config_resp_v/1
+                                      ,ecallmgr_fs_node:fetch_timeout(Node)
+                                      ),
+    kz_json:get_binary_value([<<"Profiles">>, Profile, Param], Resp).
+
