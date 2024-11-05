@@ -902,7 +902,7 @@ kazoo_cavs_to_fs_vars_fold(K, V, Acc) ->
 kazoo_cav_prefix_and_value(V) ->
     {Prefix, Encoded} = case kz_json:is_json_object(V) of
                             'true' -> {?JSON_APPLICATION_VAR_PREFIX, kz_json:encode(V)};
-                            'false' -> {?APPLICATION_VAR_PREFIX, V}
+                            'false' -> {?APPLICATION_VAR_PREFIX, kz_term:to_binary(V)}
                         end,
     %% Escape all embedded single quotes and commas so that FS can consume them
     Escaped = re:replace(Encoded, <<"([,'])">>, <<"\\\\\\g1">>, ['global', {'return', 'binary'}]),
