@@ -1670,20 +1670,22 @@ stream(UUID, JObj) ->
 -spec stream(kz_term:ne_binary(), kz_term:ne_binary(), kz_json:object()) -> fs_app().
 stream(_UUID, <<"start">>, JObj) ->
     StreamURL = kz_json:get_ne_binary_value(<<"Stream-URL">>, JObj),
-    ChannelMix = case kz_json:is_true(<<"Channel-As-Stereo">>, JObj, 'true') of
-                     'true' -> <<"stereo">>;
-                     'false' -> <<"mixed">>
-                 end,
+    AudioTracks = kz_json:get_ne_binary_value(<<"Audio-Tracks">>, JObj, <<"single">>),
+    AudioMix = kz_json:get_ne_binary_value(<<"Audio-Mix">>, JObj, <<"mono">>),
     SampleRate = kz_json:get_ne_binary_value(<<"Sample-Rate">>, JObj, <<"8k">>),
-    Metadata = case kz_json:get_ne_json_value(<<"Connect-Payload">>, JObj) of
-                   'undefined' -> <<>>;
-                   PayloadJObj -> kz_json:encode(PayloadJObj)
-               end,
+    Metadata = stream_metadata(JObj),
 
-    StreamArgs = [StreamURL, ChannelMix, SampleRate, Metadata],
+    StreamArgs = [StreamURL, AudioTracks, AudioMix, SampleRate, Metadata],
 
     {<<"kz_audio_fork_start">>, kz_binary:join(StreamArgs, <<" ">>)};
 stream(_UUID, Action, JObj) ->
     %% Action: pause, resume, stop
     StreamId = kz_json:get_ne_binary_value(<<"Stream-ID">>, JObj, <<"all">>),
     {<<"kz_audio_fork_", Action/binary>>, StreamId}.
+
+-spec stream_metadata(kz_json:object()) -> binary().
+stream_metadata(JObj) ->
+    case kz_json:get_ne_json_value(<<"Connect-Payload">>, JObj) of
+        'undefined' -> <<>>;
+        PayloadJObj -> kz_json:encode(PayloadJObj)
+    end.
