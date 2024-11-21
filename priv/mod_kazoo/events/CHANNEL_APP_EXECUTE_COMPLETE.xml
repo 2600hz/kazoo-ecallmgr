@@ -19,7 +19,7 @@
 				<filter name="Channel-Flags" type="exclude" compare="contains" value="INTERCEPTED" />
 				<filter name="Application-Response" type="exclude" value="NONE">
 					<filters scope="any">
-						<filter name="variable_signal_bridge" type="include" value="true" />
+						<filter name="Application-Proxy" type="include" value="true" />
 					</filters>
 				</filter>
 			</filters>
