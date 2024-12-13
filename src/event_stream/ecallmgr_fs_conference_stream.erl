@@ -65,24 +65,19 @@ process_event(<<"conference-destroy">>, JObj, Node) ->
     _ = ecallmgr_fs_conferences:destroy(InstanceId),
     _ = ecallmgr_conference_control_sup:stop_conference_control(Node, ConferenceId, InstanceId);
 
-process_event(<<"start-recording">>, JObj, Node) ->
+process_event(<<"start-recording">>, JObj, _Node) ->
     lager:info("conference recording started"),
-    Profile = kz_json:get_binary_value(<<"Profile">>, JObj),
     AccountId = kz_json:get_binary_value(<<"Account-ID">>, JObj),
     ConferenceName = kz_json:get_binary_value(<<"Conference-ID">>, JObj),
-    Data = ecallmgr_fs_fetch_configuration_conference:profile_param(Node, AccountId, ConferenceName, Profile, <<"recording-metadata">>),
-    case Data of
-        'undefined' -> 'ok';
-        _ ->
-            CommandReq =
-                [{<<"Conference-ID">>, ConferenceName}
-                ,{<<"Conference-Var">>, <<"Recording-Data">>}
-                ,{<<"Conference-Val">>, Data}
-                ,{<<"Application-Name">>, <<"setvar">>}
-                | kz_api:default_headers(?APP_NAME, ?APP_VERSION)
-                ],
-            kapi_conference:publish_fs_conference_setvar(ConferenceName, CommandReq)
-    end;
+    Data = recording_data(AccountId, ConferenceName),
+    CommandReq =
+        [{<<"Conference-ID">>, ConferenceName}
+        ,{<<"Parameter">>, <<"Recording-Data">>}
+        ,{<<"Value">>, Data}
+        ,{<<"Application-Name">>, <<"setvar">>}
+        | kz_api:default_headers(?APP_NAME, ?APP_VERSION)
+        ],
+    kapi_conference:publish_fs_conference_setvar(ConferenceName, CommandReq);
 process_event(<<"stop-recording">>, _JObj, _Node) ->
     lager:info("conference recording stopped");
 
@@ -157,3 +152,13 @@ conference_interaction_id(JObj) ->
         'undefined' -> 'undefined';
         Vars -> kz_json:get_ne_binary_value(<<"Interaction-ID">>, Vars)
     end.
+
+-spec recording_data(kz_term:ne_binary(),  kz_json:object()) -> kz_term:ne_binary().
+recording_data(AccountId, _ConfId) ->
+    {Year, Month, _} = erlang:date(),
+    MediaDocId = ?MATCH_MODB_PREFIX(kz_term:to_binary(Year), kz_date:pad_month(Month), kz_binary:rand_hex(16)),
+    Recorder = kapps_call_recording:media_recorder(kz_json:new(), AccountId),
+    Prop = [{<<"Recorder">>, Recorder}
+           ,{<<"ID">>, MediaDocId}
+           ],
+    base64:encode(term_to_binary(kz_json:from_list(Prop))).

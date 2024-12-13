@@ -276,9 +276,9 @@ get_conf_command(<<"setvar">>, _ConferenceId, JObj) ->
         'false' ->
             {'error', <<"conference setvar failed to execute as JObj did not validate.">>};
         'true' ->
-            Var = kz_json:get_binary_value(<<"Conference-Var">>, JObj),
-            Val = kz_json:get_binary_value(<<"Conference-Val">>, JObj),
-            {<<"setvar">>, [Var, " ", Val]}
+            Parameter = kz_json:get_binary_value(<<"Parameter">>, JObj),
+            Value = kz_json:get_binary_value(<<"Value">>, JObj),
+            {<<"setvar">>, [Parameter, " ", Value]}
     end;
 
 get_conf_command(Cmd, _ConferenceId, _JObj) ->
