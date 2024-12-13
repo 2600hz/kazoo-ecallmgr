@@ -271,6 +271,16 @@ get_conf_command(<<"vars">>, ConferenceId, JObj) ->
             {<<"vars">>, 'noop'}
     end;
 
+get_conf_command(<<"setvar">>, _ConferenceId, JObj) ->
+    case kapi_conference:fs_conference_setvar_v(JObj) of
+        'false' ->
+            {'error', <<"conference setvar failed to execute as JObj did not validate.">>};
+        'true' ->
+            Parameter = kz_json:get_binary_value(<<"Parameter">>, JObj),
+            Value = kz_json:get_binary_value(<<"Value">>, JObj),
+            {<<"setvar">>, [Parameter, " ", Value]}
+    end;
+
 get_conf_command(Cmd, _ConferenceId, _JObj) ->
     lager:debug("unknown conference command ~s", [Cmd]),
     {'error', list_to_binary([<<"unknown conference command: ">>, Cmd])}.
