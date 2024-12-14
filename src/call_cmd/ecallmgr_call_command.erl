@@ -271,13 +271,10 @@ get_fs_app(Node, UUID, JObj, <<"ring">>) ->
 get_fs_app(Node, UUID, JObj, <<"receive_fax">>) ->
     ecallmgr_fs_fax:receive_fax(Node, UUID, JObj);
 
-get_fs_app(_Node, UUID, JObj, <<"hold">>) ->
-    case kz_json:get_value(<<"Hold-Media">>, JObj) of
-        'undefined' -> {<<"kz_endless_playback">>, <<"${hold_music}">>};
-        Media ->
-            Stream = ecallmgr_util:media_path(Media, 'extant', UUID, JObj),
-            lager:debug("bridge has custom music-on-hold in channel vars: ~s", [Stream]),
-            {<<"kz_endless_playback">>, Stream}
+get_fs_app(Node, UUID, JObj, <<"hold">>) ->
+    case kapi_dialplan:hold_v(JObj) of
+        'false' -> {'error', <<"hold failed to execute as JObj did not validate">>};
+        'true' -> hold_app(Node, UUID, JObj)
     end;
 
 get_fs_app(_Node, UUID, JObj, <<"hold_control">>) ->
@@ -1699,3 +1696,35 @@ stream_metadata(JObj) ->
         'undefined' -> <<>>;
         PayloadJObj -> kz_json:encode(PayloadJObj)
     end.
+
+-spec hold_app(atom(), kz_term:ne_binary(), kz_json:object()) -> fs_app().
+hold_app(Node, UUID, JObj) ->
+    hold_app(Node, UUID, JObj, hold_strategy(JObj)).
+
+-spec hold_app(atom(), kz_term:ne_binary(), kz_json:object(), kz_tem:ne_binary()) -> fs_app().
+hold_app(_Node, UUID, JObj, <<"hold">>) ->
+    case hold_media(JObj) of
+        'undefined' ->
+            {<<"kz_hold">>, <<"${hold_music}">>};
+        Media ->
+            Stream = ecallmgr_util:moh_media_path(Media, 'extant', UUID, JObj),
+            lager:debug("bridge has custom music-on-hold in channel vars: ~s", [Stream]),
+            {<<"kz_hold">>, Stream}
+    end;
+hold_app(_Node, UUID, JObj, <<"playback">>) ->
+    case hold_media(JObj) of
+        'undefined' ->
+            {<<"kz_endless_playback">>, <<"${hold_music}">>};
+        Media ->
+            Stream = ecallmgr_util:media_path(Media, 'extant', UUID, JObj),
+            lager:debug("bridge has custom music-on-hold in channel vars: ~s", [Stream]),
+            {<<"kz_endless_playback">>, Stream}
+    end.
+
+-spec hold_strategy(kz_json:object()) -> kz_tern:ne_binary().
+hold_strategy(JObj) ->
+    kz_json:get_ne_binary_value(<<"Hold-Strategy">>, JObj, <<"playback">>).
+
+-spec hold_media(kz_json:object()) -> kz_tern:api_ne_binary().
+hold_media(JObj) ->
+    kz_json:get_ne_binary_value(<<"Hold-Media">>, JObj).
