@@ -1158,29 +1158,17 @@ record_call(UUID, JObj) ->
 -spec record_call(kz_term:ne_binary(), kz_term:ne_binary(), kz_json:object()) ->
           fs_app() | fs_apps().
 record_call(_UUID, <<"mask">>, JObj) ->
-    RecordingName = case kz_json:get_ne_binary_value(<<"Media-Name">>, JObj) of
-                        'undefined' -> <<"${Media-Recordings-Name[0]}">>;
-                        MediaName -> ecallmgr_util:recording_filename(MediaName)
-                    end,
-    {<<"record_session_mask">>, RecordingName};
+    {<<"record_session_mask">>, record_call_action_filename(JObj)};
 record_call(_UUID, <<"unmask">>, JObj) ->
-    RecordingName = case kz_json:get_ne_binary_value(<<"Media-Name">>, JObj) of
-                        'undefined' -> <<"${Media-Recordings-Name[0]}">>;
-                        MediaName -> ecallmgr_util:recording_filename(MediaName)
-                    end,
-    {<<"record_session_unmask">>, RecordingName};
+    {<<"record_session_unmask">>, record_call_action_filename(JObj)};
 record_call(_UUID, <<"pause">>, JObj) ->
-    RecordingName = case kz_json:get_ne_binary_value(<<"Media-Name">>, JObj) of
-                        'undefined' -> <<"${Media-Recordings-Name[0]}">>;
-                        MediaName -> ecallmgr_util:recording_filename(MediaName)
-                    end,
-    {<<"record_session_pause">>, RecordingName};
+    {<<"record_session_pause">>, record_call_action_filename(JObj)};
 record_call(_UUID, <<"resume">>, JObj) ->
-    RecordingName = case kz_json:get_ne_binary_value(<<"Media-Name">>, JObj) of
-                        'undefined' -> <<"${Media-Recordings-Name[0]}">>;
-                        MediaName -> ecallmgr_util:recording_filename(MediaName)
-                    end,
-    {<<"record_session_resume">>, RecordingName};
+    {<<"record_session_resume">>, record_call_action_filename(JObj)};
+record_call(_UUID, <<"toggle_mask">>, JObj) ->
+    {<<"record_session_toggle_mask">>, record_call_action_filename(JObj)};
+record_call(_UUID, <<"toggle_pause">>, JObj) ->
+    {<<"record_session_toggle_pause">>, record_call_action_filename(JObj)};
 record_call(UUID, <<"start">>, JObj) ->
     AppVariables = record_app_vars(UUID, JObj),
     TimeLimit = record_call_limit(JObj),
@@ -1209,11 +1197,22 @@ record_call(UUID, <<"start">>, JObj) ->
             {<<"record_session">>, list_to_binary(RecordArgs)}
     end;
 record_call(_UUID, <<"stop">>, JObj) ->
-    RecordingName = case kz_json:get_ne_binary_value(<<"Media-Name">>, JObj) of
-                        'undefined' -> <<"${Media-Recordings-Name[0]}">>;
-                        MediaName -> ecallmgr_util:recording_filename(MediaName)
-                    end,
-    {<<"stop_record_session">>, RecordingName}.
+    {<<"stop_record_session">>, record_call_action_filename(JObj)}.
+
+-spec record_call_action_filename(kz_json:object()) -> kz_term:ne_binary().
+record_call_action_filename(JObj) ->
+    case kz_json:get_ne_binary_value(<<"Media-Name">>, JObj) of
+        <<"all">> -> <<"all">>;
+        'undefined' -> record_call_action_default_filename(JObj);
+        MediaName -> ecallmgr_util:recording_filename(MediaName)
+    end.
+
+-spec record_call_action_default_filename(kz_json:object()) -> kz_term:ne_binary().
+record_call_action_default_filename(JObj) ->
+    case record_call_track_media_recording(JObj) of
+        true -> <<"${first-of(Media-Recordings-Name[0]|#all)}">>;
+        false -> <<"all">>
+    end.
 
 record_call_track_media_recording(JObj) ->
     kz_json:is_true(<<"Track-Media-Recording">>, JObj, 'true').
