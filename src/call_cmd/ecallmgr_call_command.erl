@@ -304,12 +304,10 @@ get_fs_app(Node, UUID, JObj, <<"page">>) ->
         'true' -> get_page_app(Node, UUID, JObj, Endpoints)
     end;
 
-get_fs_app(Node, UUID, JObj, <<"park">>) ->
+get_fs_app(_Node, UUID, JObj, <<"park">>) ->
     case kapi_dialplan:park_v(JObj) of
         'false' -> {'error', <<"park failed to execute as JObj did not validate">>};
-        'true' ->
-            maybe_set_park_timeout(Node, UUID, JObj),
-            {<<"park">>, <<>>}
+        'true' -> {<<"park">>, park_variables(UUID, JObj)}
     end;
 
 get_fs_app(_Node, _UUID, JObj, <<"echo">>) ->
@@ -1124,19 +1122,28 @@ set_terminators(Node, UUID, Ts) ->
 say_language('undefined') -> <<"en">>;
 say_language(Lang) -> Lang.
 
--spec maybe_set_park_timeout(atom(), kz_term:ne_binary(), kz_json:object()) -> 'ok'.
-maybe_set_park_timeout(Node, UUID, JObj) ->
-    case kz_json:get_integer_value(<<"Timeout">>, JObj) of
-        'undefined' -> 'ok';
-        Timeout ->
-            ParkTimeout =
-                case kz_json:get_ne_binary_value(<<"Hangup-Cause">>, JObj) of
-                    'undefined' -> kz_term:to_binary(Timeout);
-                    Cause ->
-                        [kz_term:to_binary(Timeout), ":", Cause]
-                end,
-            ecallmgr_fs_command:set(Node, UUID, [{<<"park_timeout">>, ParkTimeout}])
+park_variables(UUID, JObj) ->
+    Routines = [fun park_timeout/1],
+    scope_variables(UUID, park_variables_fold(Routines, JObj, [])).
+
+park_variables_fold([], _JObj, Acc) -> Acc;
+park_variables_fold([Fun|Funs], JObj, Acc) ->
+    case Fun(JObj) of
+        {_Name, undefined} -> park_variables_fold(Funs, JObj, Acc);
+        {_Name, _Value} = Var -> park_variables_fold(Funs, JObj, [Var | Acc])
     end.
+
+-spec park_timeout(kz_json:object()) -> tuple().
+park_timeout(JObj) ->
+    Timeout = kz_json:get_integer_value(<<"Timeout">>, JObj),
+    {<<"park_timeout">>, park_timeout_cause(Timeout, JObj)}.
+
+park_timeout_cause(Timeout, JObj) when is_integer(Timeout), Timeout > 0 ->
+    case kz_json:get_ne_binary_value(<<"Hangup-Cause">>, JObj) of
+        undefined -> Timeout;
+        Cause -> [kz_term:to_binary(Timeout), ":", Cause]
+    end;
+park_timeout_cause(_Timeout, _JObj) -> undefined.
 
 -spec deflect(kz_json:object()) -> {kz_term:ne_binary(), iodata()}.
 deflect(JObj) ->
