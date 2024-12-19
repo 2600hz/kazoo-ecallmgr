@@ -87,7 +87,7 @@ When a user has one or more SIP endpoints and has also configured failover (by s
 
 ### Ring Group callflow
 
-When KAZOO builds a ring group endpoint list, it resolves all group and user IDs into their owned device IDs. That list of endpoints is then sent to ecallmgr for bridging.
+When {% BRAND_NAME %} builds a ring group endpoint list, it resolves all group and user IDs into their owned device IDs. That list of endpoints is then sent to ecallmgr for bridging.
 
 This means that if any SIP device from the resulting endpoint list has an active registration, *all* failover endpoints will be filtered out and not dialed. So if a user has no online SIP endpoints and has failover configured, their failover endpoint will *not* ring if any other SIP endpoint in the ring group is actively registered.
 
