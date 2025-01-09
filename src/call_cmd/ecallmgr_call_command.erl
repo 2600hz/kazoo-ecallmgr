@@ -1707,7 +1707,7 @@ stream_metadata(JObj) ->
 hold_app(Node, UUID, JObj) ->
     hold_app(Node, UUID, JObj, hold_strategy(JObj)).
 
--spec hold_app(atom(), kz_term:ne_binary(), kz_json:object(), kz_tem:ne_binary()) -> fs_app().
+-spec hold_app(atom(), kz_term:ne_binary(), kz_json:object(), kz_term:ne_binary()) -> fs_app().
 hold_app(_Node, UUID, JObj, <<"hold">>) ->
     case hold_media(JObj) of
         'undefined' ->
@@ -1727,10 +1727,10 @@ hold_app(_Node, UUID, JObj, <<"playback">>) ->
             {<<"kz_endless_playback">>, Stream}
     end.
 
--spec hold_strategy(kz_json:object()) -> kz_tern:ne_binary().
+-spec hold_strategy(kz_json:object()) -> kz_term:ne_binary().
 hold_strategy(JObj) ->
     kz_json:get_ne_binary_value(<<"Hold-Strategy">>, JObj, <<"playback">>).
 
--spec hold_media(kz_json:object()) -> kz_tern:api_ne_binary().
+-spec hold_media(kz_json:object()) -> kz_term:api_ne_binary().
 hold_media(JObj) ->
     kz_json:get_ne_binary_value(<<"Hold-Media">>, JObj).
