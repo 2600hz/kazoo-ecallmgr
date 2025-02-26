@@ -158,7 +158,7 @@ recording_data(AccountId, ConfId) ->
     {Year, Month, _} = erlang:date(),
     MediaDocId = ?MATCH_MODB_PREFIX(kz_term:to_binary(Year), kz_date:pad_month(Month), kz_binary:rand_hex(16)),
     AccountDb = kzs_util:format_account_db(AccountId),
-    {RecordingUrl, ConfNane} =
+    {RecordingUrl, ConfName} =
         case kz_datamgr:open_cache_doc(AccountDb, ConfId) of
             {'ok', Doc} ->
                 {kz_json:get_ne_binary_value(<<"recording_url">>, Doc)
@@ -171,6 +171,6 @@ recording_data(AccountId, ConfId) ->
     Prop = [{<<"Recorder">>, Recorder}
            ,{<<"url">>, RecordingUrl}
            ,{<<"ID">>, MediaDocId}
-           ,{<<"Conference-Name">>, ConfNane}
+           ,{<<"Conference-Name">>, ConfName}
            ],
     base64:encode(term_to_binary(kz_json:from_list(Prop))).
