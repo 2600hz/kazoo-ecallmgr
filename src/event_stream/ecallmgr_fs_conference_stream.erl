@@ -161,8 +161,8 @@ recording_data(AccountId, ConfId) ->
     {RecordingUrl, ConfNane} =
         case kz_datamgr:open_cache_doc(AccountDb, ConfId) of
             {'ok', Doc} ->
-                {kz_json:get_binary_value(<<"recording_url">>, Doc, 'undefined')
-                ,kz_json:get_binary_value(<<"name">>, Doc, 'undefined')
+                {kz_json:get_ne_binary_value(<<"recording_url">>, Doc)
+                ,kz_json:get_ne_binary_value(<<"name">>, Doc)
                 };
             {'error', _Error} ->
                 {'undefined', 'undefined'}
