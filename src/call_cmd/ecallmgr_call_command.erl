@@ -1683,13 +1683,13 @@ stream(UUID, JObj) ->
 -spec stream(kz_term:ne_binary(), kz_term:ne_binary(), kz_json:object()) -> fs_app().
 stream(_UUID, <<"start">>, JObj) ->
     StreamURL = kz_json:get_ne_binary_value(<<"Stream-URL">>, JObj),
-    AudioFormat = kz_json:get_ne_binary_value(<<"Audio-Format">>, JObj, <<"L16">>),
+    AudioCodec = kz_json:get_ne_binary_value(<<"Audio-Codec">>, JObj, <<"L16">>),
     AudioTracks = kz_json:get_ne_binary_value(<<"Audio-Tracks">>, JObj, <<"inbound">>),
     AudioMix = kz_json:get_ne_binary_value(<<"Audio-Mix">>, JObj, <<"mono">>),
     SampleRate = kz_json:get_ne_binary_value(<<"Sample-Rate">>, JObj, <<"8k">>),
     Metadata = stream_metadata(JObj),
 
-    StreamArgs = [StreamURL, AudioFormat, AudioTracks, AudioMix, SampleRate, Metadata],
+    StreamArgs = [StreamURL, AudioCodec, AudioTracks, AudioMix, SampleRate, Metadata],
 
     {<<"kz_audio_fork_start">>, kz_binary:join(StreamArgs, <<" ">>)};
 stream(_UUID, Action, JObj) ->
