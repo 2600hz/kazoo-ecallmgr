@@ -136,14 +136,16 @@
                          ,span = <<"1">> :: kz_term:ne_binary()
                          ,channel_selection = <<"a">> :: kz_term:ne_binary()
                          ,interface = <<"RR">> :: kz_term:ne_binary() % for Skype
-                         ,sip_interface
+                         ,sip_interface :: kz_term:api_binary()
                          ,channel_vars = [] :: kz_term:ne_binaries()
                          ,header_vars = [] :: kz_term:ne_binaries()
                          ,include_channel_vars = 'true' :: boolean()
                          ,failover :: kz_term:api_object()
-                         ,account_id
-                         ,endpoint_id
-                         ,endpoint_uri
+                         ,account_id :: kz_term:api_binary()
+                         ,endpoint_id :: kz_term:api_binary()
+                         ,endpoint_uri :: kz_term:api_binary()
+                         ,channel :: kz_term:api_ne_binary()
+                         ,channel_data :: kz_term:api_ne_binary()
                          }).
 -type bridge_endpoint() :: #bridge_endpoint{}.
 
@@ -883,12 +885,14 @@ endpoint_jobj_to_record(Endpoint, IncludeVars) ->
                              ,span = get_endpoint_span(Endpoint)
                              ,channel_selection = get_endpoint_channel_selection(Endpoint)
                              ,interface = get_endpoint_interface(Endpoint)
-                             ,sip_interface = kz_json:get_ne_value(<<"SIP-Interface">>, Endpoint)
+                             ,sip_interface = kz_json:get_ne_binary_value(<<"SIP-Interface">>, Endpoint)
                              ,include_channel_vars = IncludeVars
                              ,failover = kz_json:get_json_value(<<"Failover">>, Endpoint)
-                             ,account_id = kz_json:get_value(<<"Account-ID">>, Endpoint)
-                             ,endpoint_id = kz_json:get_value(<<"Endpoint-ID">>, Endpoint)
-                             ,endpoint_uri = kz_json:get_value(<<"Endpoint-URI">>, Endpoint)
+                             ,account_id = kz_json:get_ne_binary_value(<<"Account-ID">>, Endpoint)
+                             ,endpoint_id = kz_json:get_ne_binary_value(<<"Endpoint-ID">>, Endpoint)
+                             ,endpoint_uri = kz_json:get_ne_binary_value(<<"Endpoint-URI">>, Endpoint)
+                             ,channel = kz_json:get_ne_binary_value(<<"Endpoint-Channel">>, Endpoint)
+                             ,channel_data = kz_json:get_ne_binary_value(<<"Endpoint-Channel-Data">>, Endpoint)
                              },
     endpoint_jobj_to_record_vars(Endpoint, Bridge).
 
@@ -996,6 +1000,10 @@ build_channel(#bridge_endpoint{endpoint_type = <<"skype">>}=Endpoint) ->
     build_skype_channel(Endpoint);
 build_channel(#bridge_endpoint{endpoint_type = <<"sip">>}=Endpoint) ->
     build_sip_channel(Endpoint);
+build_channel(#bridge_endpoint{endpoint_type = <<"application">>} = Endpoint) ->
+    build_application_channel(Endpoint);
+build_channel(#bridge_endpoint{endpoint_type = EndpointType}) ->
+    {error, list_to_binary(["endpoint type ", EndpointType, " not handled"])};
 build_channel(EndpointJObj) ->
     build_channel(endpoint_jobj_to_record(EndpointJObj)).
 
@@ -1042,6 +1050,35 @@ build_skype_channel(#bridge_endpoint{user='undefined'}) ->
 build_skype_channel(#bridge_endpoint{user=User, interface=IFace}) ->
     {'ok', <<"skypopen/", IFace/binary, "/", User/binary>>}.
 
+-spec build_application_channel(bridge_endpoint()) ->
+          {'ok', bridge_channel()} |
+          {'error', any()}.
+build_application_channel(#bridge_endpoint{} = Endpoint) ->
+    Routines = [fun application_channel/1
+               ,fun application_config/2
+               ,fun maybe_append_channel_vars/2
+               ],
+    try lists:foldl(fun build_channel_fold/2, Endpoint, Routines) of
+        {Channel, _} -> {'ok', Channel}
+    catch
+        _E:_R:ST ->
+            lager:warning("failed to build sip channel (~s): ~p", [_E, _R]),
+            kz_log:log_stacktrace(ST),
+            {'error', 'invalid'}
+    end.
+
+-spec application_channel(bridge_endpoint()) -> kz_term:ne_binary().
+application_channel(#bridge_endpoint{channel = undefined}) ->
+    throw({error, 'missing_appplication_channel'});
+application_channel(#bridge_endpoint{channel = Channel}) ->
+    Channel.
+
+-spec application_config(kz_term:ne_binary(), bridge_endpoint()) -> kz_term:ne_binary() | {kz_term:ne_binary(), bridge_endpoint()}.
+application_config(Channel, #bridge_endpoint{channel_data = undefined}) -> Channel;
+application_config(Channel, #bridge_endpoint{channel_data = Data, channel_vars = ChannelVars} = Endpoint) ->
+    Var = list_to_binary(["Endpoint-Channel-Data='", Data, "'"]),
+    {Channel, Endpoint#bridge_endpoint{channel_vars = [Var | ChannelVars]}}.
+
 -spec build_sip_channel(bridge_endpoint()) ->
           {'ok', bridge_channel()} |
           {'error', 'invalid'}.
@@ -1055,7 +1092,7 @@ build_sip_channel(#bridge_endpoint{failover=Failover}=Endpoint) ->
                ,fun maybe_set_interface/2
                ,fun maybe_append_channel_vars/2
                ],
-    try lists:foldl(fun build_sip_channel_fold/2, Endpoint, Routines) of
+    try lists:foldl(fun build_channel_fold/2, Endpoint, Routines) of
         {Channel, _} -> {'ok', Channel}
     catch
         _E:{'badmatch', {'error', 'not_found'}}:_ ->
@@ -1073,15 +1110,15 @@ build_sip_channel(#bridge_endpoint{failover=Failover}=Endpoint) ->
 -type build_channel_fun() :: build_channel_fun_1() | build_channel_fun_2().
 -type build_channel_acc() :: bridge_channel() | {bridge_channel(), bridge_endpoint()}.
 
--spec build_sip_channel_fold(build_channel_fun(), build_channel_acc()) -> build_channel_acc().
-build_sip_channel_fold(Fun, {Contact, Endpoint}) ->
+-spec build_channel_fold(build_channel_fun(), build_channel_acc()) -> build_channel_acc().
+build_channel_fold(Fun, {Contact, Endpoint}) ->
     case Fun(Contact, Endpoint) of
-        {NewContact, NewEndpoint} -> {NewContact, NewEndpoint};
+        {_, _} = NewContactEndpoint -> NewContactEndpoint;
         NewContact -> {NewContact, Endpoint}
     end;
-build_sip_channel_fold(Fun, Endpoint) ->
+build_channel_fold(Fun, Endpoint) ->
     case Fun(Endpoint) of
-        {NewContact, NewEndpoint} -> {NewContact, NewEndpoint};
+        {_, _} = NewContactEndpoint -> NewContactEndpoint;
         NewContact -> {NewContact, Endpoint}
     end.
 
@@ -1124,7 +1161,7 @@ not_found() ->
     {'error', 'not_found'}.
 
 -else.
--spec get_sip_contact(bridge_endpoint()) -> kz_term:ne_binary().
+-spec get_sip_contact(bridge_endpoint()) -> kz_term:ne_binary() | {kz_term:ne_binary(), bridge_endpoint()}.
 get_sip_contact(#bridge_endpoint{invite_format = <<"route">>, route = <<"loopback/", Route/binary>>}) ->
     <<"loopback/", Route/binary, "/", (?DEFAULT_FREESWITCH_CONTEXT)/binary>>;
 get_sip_contact(#bridge_endpoint{invite_format = <<"route">>, route=Route}) ->
