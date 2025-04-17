@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2023, 2600Hz
+%%% @copyright (C) 2010-2025, 2600Hz
 %%% @doc Various utilities specific to ecallmgr. More general utilities go
 %%% in kazoo_util.erl
 %%%
@@ -1650,7 +1650,6 @@ kz_moh_option_to_arg_fold(_Option, Args) -> Args.
 
 -spec set_prefix() -> kz_term:ne_binary().
 set_prefix() -> list_to_binary([?FS_MULTI_VAR_SEP_PREFIX, ?FS_MULTI_VAR_SEP]).
-
 
 -spec get_resolve_options() -> kz_term:proplist().
 get_resolve_options() ->
