@@ -1003,7 +1003,7 @@ build_channel(#bridge_endpoint{endpoint_type = <<"sip">>}=Endpoint) ->
 build_channel(#bridge_endpoint{endpoint_type = <<"application">>} = Endpoint) ->
     build_application_channel(Endpoint);
 build_channel(#bridge_endpoint{endpoint_type = EndpointType}) ->
-    {error, list_to_binary(["endpoint type ", EndpointType, " not handled"])};
+    {'error', list_to_binary(["endpoint type ", EndpointType, " not handled"])};
 build_channel(EndpointJObj) ->
     build_channel(endpoint_jobj_to_record(EndpointJObj)).
 
@@ -1068,14 +1068,18 @@ build_application_channel(#bridge_endpoint{} = Endpoint) ->
     end.
 
 -spec application_channel(bridge_endpoint()) -> kz_term:ne_binary().
-application_channel(#bridge_endpoint{channel = undefined}) ->
-    throw({error, 'missing_appplication_channel'});
+application_channel(#bridge_endpoint{channel = 'undefined'}) ->
+    throw({'error', 'missing_appplication_channel'});
 application_channel(#bridge_endpoint{channel = Channel}) ->
     Channel.
 
 -spec application_config(kz_term:ne_binary(), bridge_endpoint()) -> kz_term:ne_binary() | {kz_term:ne_binary(), bridge_endpoint()}.
-application_config(Channel, #bridge_endpoint{channel_data = undefined}) -> Channel;
-application_config(Channel, #bridge_endpoint{channel_data = Data, channel_vars = ChannelVars} = Endpoint) ->
+application_config(Channel, #bridge_endpoint{channel_data = 'undefined'}) -> Channel;
+application_config(Channel
+                  ,#bridge_endpoint{channel_data = Data
+                                   ,channel_vars = ChannelVars
+                                   } = Endpoint
+                  ) ->
     Var = list_to_binary(["Endpoint-Channel-Data='", Data, "'"]),
     {Channel, Endpoint#bridge_endpoint{channel_vars = [Var | ChannelVars]}}.
 
@@ -1688,7 +1692,6 @@ kz_moh_option_to_arg_fold(_Option, Args) -> Args.
 
 -spec set_prefix() -> kz_term:ne_binary().
 set_prefix() -> list_to_binary([?FS_MULTI_VAR_SEP_PREFIX, ?FS_MULTI_VAR_SEP]).
-
 
 -spec get_resolve_options() -> kz_term:proplist().
 get_resolve_options() ->
