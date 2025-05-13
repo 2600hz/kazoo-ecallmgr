@@ -1015,11 +1015,11 @@ play_app(UUID, JObj) ->
     end.
 
 play_app(MediaPath, 'true', _Loop) ->
-    {<<"endless_playback">>, MediaPath};
+    {<<"kz_endless_playback_app">>, MediaPath};
 play_app(MediaPath, 'false', LoopCount) when is_integer(LoopCount), LoopCount > 0 ->
-    {<<"loop_playback">>, make_loop_playback_args(LoopCount, MediaPath)};
+    {<<"kz_loop_playback_app">>, make_loop_playback_args(LoopCount, MediaPath)};
 play_app(MediaPath, _Endless, _Loop) ->
-    {<<"playback">>, MediaPath}.
+    {<<"kz_playback_app">>, MediaPath}.
 
 make_loop_playback_args(LoopCount, MediaPath) ->
     <<"+", (kz_term:to_binary(LoopCount))/binary, " ", MediaPath/binary>>.
