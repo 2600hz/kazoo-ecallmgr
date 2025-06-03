@@ -360,27 +360,9 @@ is_number_blacklisted(Blacklist, JObj) ->
     Number = kz_json:get_value(<<"Caller-ID-Number">>, JObj, kz_privacy:anonymous_caller_id_number()),
     Normalized = knm_converters:normalize(Number),
     case kz_json:get_value(Normalized, Blacklist) of
-        'undefined' -> maybe_blocklisted_by_prefix(Normalized, Blacklist);
+        'undefined' -> 'false';
         _ -> lager:info("~s(~s) is blacklisted", [Number, Normalized]),
              'true'
-    end.
-
--spec maybe_blocklisted_by_prefix(kz_term:ne_binary(), kz_json:object()) -> boolean().
-maybe_blocklisted_by_prefix(NormalizedNumber, Blacklist) ->
-    Prefixes = kz_json:get_keys(Blacklist),
-    lists:any(fun(Prefix) ->
-                      NormalizedPrefix = re:replace(re:replace(Prefix, "[^0-9+]", "", ['global', {'return', 'binary'}]), "\\+", "\\\\+", ['global', {'return', 'binary'}]),
-                      is_number_blacklisted_by_prefix(NormalizedPrefix, NormalizedNumber)
-              end, Prefixes).
-
--spec is_number_blacklisted_by_prefix(kz_term:ne_binary(), kz_term:ne_binary()) -> boolean().
-is_number_blacklisted_by_prefix(<<>>, _Number) -> 'false';
-is_number_blacklisted_by_prefix(Prefix, Number) ->
-    case re:run(Number, <<"^", Prefix/binary>>) of
-        'nomatch' -> 'false';
-        _ ->
-            lager:info("~p is blacklisted by pattern ~p", [Number, Prefix]),
-            'true'
     end.
 
 -spec get_blacklists(kz_term:ne_binary()) -> kz_term:ne_binaries().
