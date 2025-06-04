@@ -16,6 +16,10 @@
 -export([dialplan/1]).
 -export([route_winner/1]).
 
+-ifdef(TEST).
+-export([is_blacklisted_by_prefixes/2]).
+-endif.
+
 -include("ecallmgr.hrl").
 
 -define(ROUTE_WINNER_TIMEOUT, 60 * ?MILLISECONDS_IN_SECOND).
@@ -310,6 +314,7 @@ route_winner(#{payload := JObj}) ->
 block_call_routines(Map) ->
     Routines = [{fun should_block_anonymous/1, {<<"433">>, <<"Anonymity Disallowed">>}}
                ,{fun is_blacklisted/1, {<<"603">>, <<"Decline">>}}
+               ,{fun is_blacklisted_by_prefixes/1, {<<"603">>, <<"Decline">>}}
                ],
     lists:foldl(fun block_call_routine/2, Map, Routines).
 
@@ -365,6 +370,30 @@ is_number_blacklisted(Blacklist, JObj) ->
              'true'
     end.
 
+-spec is_blacklisted_by_prefixes(kz_json:object()) -> boolean().
+is_blacklisted_by_prefixes(JObj) ->
+    is_blacklisted_by_prefixes(get_blacklist_prefixes(JObj), JObj).
+
+-spec is_blacklisted_by_prefixes(kz_json:object(), kz_json:object()) -> boolean().
+is_blacklisted_by_prefixes(BlacklistPrefixes, JObj) ->
+    Number = kz_json:get_value(<<"Caller-ID-Number">>, JObj, kz_privacy:anonymous_caller_id_number()),
+    Normalized = knm_converters:normalize(Number),
+    Prefixes = kz_json:get_keys(BlacklistPrefixes),
+    lists:any(fun(Prefix) ->
+                      NormalizedPrefix = re:replace(re:replace(Prefix, "[^0-9+]", "", ['global', {'return', 'binary'}]), "\\+", "\\\\+", ['global', {'return', 'binary'}]),
+                      is_number_blacklisted_by_prefix(NormalizedPrefix, Normalized)
+              end, Prefixes).
+
+-spec is_number_blacklisted_by_prefix(kz_term:ne_binary(), kz_term:ne_binary()) -> boolean().
+is_number_blacklisted_by_prefix(<<>>, _Number) -> 'false';
+is_number_blacklisted_by_prefix(Prefix, Number) ->
+    case re:run(Number, <<"^", Prefix/binary>>) of
+        'nomatch' -> 'false';
+        _ ->
+            lager:info("~p is blacklisted by pattern ~p", [Number, Prefix]),
+            'true'
+    end.
+
 -spec get_blacklists(kz_term:ne_binary()) -> kz_term:ne_binaries().
 get_blacklists(AccountId) ->
     case kzd_accounts:fetch(AccountId) of
@@ -391,6 +420,30 @@ get_blacklist(AccountId, Blacklists) ->
                                 Acc;
                             {'ok', Doc} ->
                                 Numbers = kz_json:get_value(<<"numbers">>, Doc, kz_json:new()),
+                                BlackList = maybe_set_block_anonymous(Numbers, kz_json:is_true(<<"should_block_anonymous">>, Doc)),
+                                kz_json:merge_jobjs(Acc, BlackList)
+                        end
+                end
+               ,kz_json:new()
+               ,Blacklists
+               ).
+
+-spec get_blacklist_prefixes(kz_json:object()) -> kz_json:object().
+get_blacklist_prefixes(JObj) ->
+    AccountId = kzd_fetch:account_id(JObj),
+    get_blacklist_prefixes(AccountId, get_blacklists(AccountId)).
+
+-spec get_blacklist_prefixes(kz_term:ne_binary(), kz_term:ne_binaries()) -> kz_json:object().
+get_blacklist_prefixes(_AccountId, []) -> kz_json:new();
+get_blacklist_prefixes(AccountId, Blacklists) ->
+    AccountDb = kzs_util:format_account_db(AccountId),
+    lists:foldl(fun(BlacklistId, Acc) ->
+                        case kz_datamgr:open_cache_doc(AccountDb, BlacklistId) of
+                            {'error', _R} ->
+                                lager:error("could not open ~s in ~s: ~p", [BlacklistId, AccountDb, _R]),
+                                Acc;
+                            {'ok', Doc} ->
+                                Numbers = kz_json:get_value(<<"prefixes">>, Doc, kz_json:new()),
                                 BlackList = maybe_set_block_anonymous(Numbers, kz_json:is_true(<<"should_block_anonymous">>, Doc)),
                                 kz_json:merge_jobjs(Acc, BlackList)
                         end
