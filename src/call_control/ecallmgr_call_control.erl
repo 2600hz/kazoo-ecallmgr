@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2024, 2600Hz
+%%% @copyright (C) 2010-2025, 2600Hz
 %%% @doc Created when a call hits a fetch_handler in ecallmgr_route.
 %%% A Control Queue is created by the lookup_route function in the
 %%% fetch_handler. On initialization, besides adding itself as the
@@ -1318,5 +1318,5 @@ publish_call_transfer_performed(Node, UUID) ->
                                ,{<<"Caller-ID-Name">>, kz_json:get_value(<<"Other-Leg-Caller-ID-Name">>, ChannelProps)}
                                | kz_api:default_headers(?APP_NAME, ?APP_VERSION)
                                ]
-                               ,ChannelProps),
+                              ,ChannelProps),
     kapi_call:publish_event(Event).
