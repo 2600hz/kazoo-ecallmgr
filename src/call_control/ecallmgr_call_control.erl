@@ -1122,7 +1122,7 @@ unbind(Node, CallId) ->
 -spec handle_replaced(kz_json:object(), state()) ->
           {'noreply', state()}.
 handle_replaced(JObj, #state{fetch_id=FetchId
-                            ,node=_Node
+                            ,node=Node
                             ,call_id=_CallId
                             }=State) ->
     case kz_call_event:custom_channel_var(JObj, <<"Fetch-ID">>) of
@@ -1130,6 +1130,8 @@ handle_replaced(JObj, #state{fetch_id=FetchId
             ReplacedBy = kz_json:get_ne_binary_value(<<"Replaced-By">>, JObj),
             case ecallmgr_fs_channel:fetch(ReplacedBy) of
                 {'ok', _Channel} ->
+                    OtherLegCallId = kz_json:get_value(<<"Other-Leg-Call-ID">>, JObj),
+                    _ = kz_process:spawn(fun publish_call_transfer_performed/2, [Node, OtherLegCallId]),
                     {'noreply', handle_sofia_replaced(ReplacedBy, State)};
                 _Else ->
                     lager:debug("channel replaced was not handled : ~p", [_Else]),
@@ -1300,3 +1302,21 @@ error(Node, CallId, Cmd, Error, Msg) ->
      ,node => Node
      ,app_name => kapi_dialplan:application_name(Cmd)
      }.
+
+-spec publish_call_transfer_performed(atom(), kz_term:api_binary()) -> 'ok'.
+publish_call_transfer_performed(_Node, 'undefined') ->
+    lager:info("no other leg, do not publish transfer_performed."),
+    'ok';
+publish_call_transfer_performed(Node, UUID) ->
+    ChannelProps =
+        case ecallmgr_fs_channel:channel_data(Node, UUID) of
+            {'ok', Ps} -> Ps;
+            {'error', _Err} -> []
+        end,
+    Event = kz_json:set_values([{<<"Event-Name">>, <<"TRANSFER_PERFORMED">>}
+                               ,{<<"Caller-ID-Number">>, kz_json:get_value(<<"Other-Leg-Caller-ID-Number">>, ChannelProps)}
+                               ,{<<"Caller-ID-Name">>, kz_json:get_value(<<"Other-Leg-Caller-ID-Name">>, ChannelProps)}
+                               | kz_api:default_headers(?APP_NAME, ?APP_VERSION)
+                               ]
+                               ,ChannelProps),
+    kapi_call:publish_event(Event).
