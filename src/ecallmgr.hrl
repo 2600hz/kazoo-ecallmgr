@@ -382,6 +382,8 @@
                               ,{<<"Presence-Aliases">>, <<"presence_aliases">>}
                               ,{<<"Pickup-Forbidden">>, <<"intercept_forbidden">>}
                               ,{<<"Pickup-Hangup-On-Forbidden">>, <<"intercept_hangup_on_forbidden">>}
+                              ,{<<"sip_h_Geolocation-Routing">>, <<"sip_h_Geolocation-Routing">>}
+                              ,{<<"sip_h_Geolocation">>, <<"sip_h_Geolocation">>}
                               ]).
 
 %% Call and Channel Vars that have a special transform value instead of the
