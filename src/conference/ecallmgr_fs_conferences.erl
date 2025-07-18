@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2013-2024, 2600Hz
+%%% @copyright (C) 2013-2025, 2600Hz
 %%% @doc Track FreeSWITCH conference information and provide accessors
 %%% @author James Aimonetti
 %%%
@@ -222,6 +222,7 @@ handle_search_req(JObj, Props) ->
 handle_search_conference(JObj, _Props, Name) ->
     lager:info("received search request for conference name ~s", [Name]),
     case ets:match_object(?CONFERENCES_TBL, #conference{name=Name, _ = '_'}) of
+        [] -> publish_no_conference(JObj, Name);
         %% TODO: this ignores conferences on multiple nodes until big-conferences
         [#conference{}=Conference | _Conferences] ->
             {Name, ConfResp} = conference_resp(Conference),
@@ -232,17 +233,18 @@ handle_search_conference(JObj, _Props, Name) ->
                                       ]
                                      ,ConfResp
                                      ),
-            kapi_conference:publish_search_resp(kz_api:server_id(JObj), Resp);
-        [] ->
-            lager:debug("sending error search response, conference not found"),
-            Error = [{<<"Msg-ID">>, kz_json:get_value(<<"Msg-ID">>, JObj, <<>>)}
-                    ,{<<"Error-Message">>, <<"Conference ", Name/binary, " not found">>}
-                    ,{<<"Request">>, JObj}
-                    ,{<<"Conference-ID">>, Name}
-                    | kz_api:default_headers(?APP_NAME, ?APP_VERSION)
-                    ],
-            kapi_conference:publish_error(kz_api:server_id(JObj), Error)
+            kapi_conference:publish_search_resp(kz_api:server_id(JObj), Resp)
     end.
+
+publish_no_conference(JObj, Name) ->
+    lager:debug("sending error search response, conference not found"),
+    Error = [{<<"Msg-ID">>, kz_api:msg_id(JObj)}
+            ,{<<"Error-Message">>, <<"Conference ", Name/binary, " not found">>}
+            ,{<<"Request">>, JObj}
+            ,{<<"Conference-ID">>, Name}
+            | kz_api:default_headers(?APP_NAME, ?APP_VERSION)
+            ],
+    kapi_conference:publish_error(kz_api:server_id(JObj), Error).
 
 -spec handle_search_account(kz_json:object(), kz_term:proplist()) -> 'ok'.
 handle_search_account(JObj, _Props) ->
@@ -278,7 +280,8 @@ conference_resp(#conference{uuid=UUID
                            ,switch_external_ip=ExternalIP
                            ,interaction_id=InteractionId
                            ,custom_conference_vars=ConfVars
-                           }) ->
+                           }
+               ) ->
     Participants = participants(Name),
     {Moderators, Members} = lists:partition(fun is_moderator/1, Participants),
     Resp = [{<<"Conference-ID">>, Name}
@@ -496,26 +499,26 @@ conference_to_props(#conference{name=Name
                                ,custom_conference_vars=CCVs
                                }) ->
     props:filter_undefined(
-      [{<<"Name">>, Name}
+      [{<<"Account-ID">>, AccountId}
+      ,{<<"Answered">>, Answered}
+      ,{<<"Custom-Conference-Vars">>, CCVs}
+      ,{<<"Dynamic">>, Dynamic}
+      ,{<<"Enforce-Minimum">>, EnforceMin}
+      ,{<<"Enter-Sound">>, EnterSound}
+      ,{<<"Exit-Sound">>, ExitSound}
       ,{<<"Instance-ID">>, UUID}
+      ,{<<"Is-Local">>, IsLocal}
+      ,{<<"Locked">>, Locked}
+      ,{<<"Lost-Floor">>, LostFloor}
+      ,{<<"Name">>, Name}
       ,{<<"Node">>, Node}
       ,{<<"Profile-Name">>, Profile}
-      ,{<<"With-Floor">>, WithFloor}
-      ,{<<"Lost-Floor">>, LostFloor}
       ,{<<"Running">>, Running}
-      ,{<<"Answered">>, Answered}
-      ,{<<"Enforce-Minimum">>, EnforceMin}
-      ,{<<"Dynamic">>, Dynamic}
-      ,{<<"Exit-Sound">>, ExitSound}
-      ,{<<"Enter-Sound">>, EnterSound}
       ,{<<"Start-Time">>, StartTime}
+      ,{<<"Switch-External-IP">>, ExternalIP}
       ,{<<"Switch-Hostname">>, Hostname}
       ,{<<"Switch-URL">>, SwitchURL}
-      ,{<<"Switch-External-IP">>, ExternalIP}
-      ,{<<"Account-ID">>, AccountId}
-      ,{<<"Locked">>, Locked}
-      ,{<<"Is-Local">>, IsLocal}
-      ,{<<"Custom-Conference-Vars">>, CCVs}
+      ,{<<"With-Floor">>, WithFloor}
       ]).
 
 -spec list_conferences(atom()) -> conferences() | participants().
@@ -530,19 +533,25 @@ list_conferences(Node) ->
         {'error', _} -> []
     end.
 
--spec xml_list_to_records(kz_types:xml_els(), atom()) -> conferences() | participants().
+-spec xml_list_to_records(kz_types:xml_el() | kz_types:xml_els(), atom()) -> conferences() | participants().
 xml_list_to_records(Xml, Node) -> xml_list_to_records(Xml, Node, []).
 
 xml_list_to_records(#xmlElement{name='conferences'
                                ,content=XmlElements
-                               }, Node, Recs) ->
+                               }
+                   ,Node
+                   ,Recs
+                   ) ->
     xml_list_to_records(XmlElements, Node, Recs);
 xml_list_to_records([], _, Recs) -> Recs;
 xml_list_to_records([#xmlElement{name='conference'
                                 ,content=XmlMembers
                                 }=Xml
                     | XmlElements
-                    ], Node, Recs) ->
+                    ]
+                   ,Node
+                   ,Recs
+                   ) ->
     Conference = xml_to_conference(Xml, Node),
     Participants = xml_members_to_participants(XmlMembers, Conference),
     xml_list_to_records(XmlElements, Node, [Conference | Participants ++ Recs]);
@@ -550,7 +559,10 @@ xml_list_to_records([_|XmlElements], Node, Recs) ->
     xml_list_to_records(XmlElements, Node, Recs);
 xml_list_to_records(#xmlElement{name='conference'
                                ,content=XmlMembers
-                               }=Xml, Node, Recs) ->
+                               }=Xml
+                   ,Node
+                   ,Recs
+                   ) ->
     Conference = xml_to_conference(Xml, Node),
     Participants = xml_members_to_participants(XmlMembers, Conference),
     [Conference | Participants ++ Recs];
@@ -559,20 +571,26 @@ xml_list_to_records(_, _, Recs) -> Recs.
 -spec xml_to_conference(kz_types:xml_el(), atom()) -> conference().
 xml_to_conference(#xmlElement{name='conference'
                              ,attributes=Attrs
-                             }, Node) ->
+                             }
+                 ,Node
+                 ) ->
     [_, Hostname] = binary:split(kz_term:to_binary(Node), <<"@">>),
-    xml_attrs_to_conference(Attrs, #conference{node=Node
-                                              ,switch_hostname=Hostname
-                                              ,switch_url=ecallmgr_fs_nodes:sip_url(Node)
-                                              ,switch_external_ip=ecallmgr_fs_nodes:sip_external_ip(Node)
-                                              }).
+    xml_attrs_to_conference(Attrs
+                           ,#conference{node=Node
+                                       ,switch_hostname=Hostname
+                                       ,switch_url=ecallmgr_fs_nodes:sip_url(Node)
+                                       ,switch_external_ip=ecallmgr_fs_nodes:sip_external_ip(Node)
+                                       }
+                           ).
 
 -spec xml_attrs_to_conference(kz_types:xml_attribs(), conference()) ->
           conference().
 xml_attrs_to_conference([], Conference) -> Conference;
 xml_attrs_to_conference([#xmlAttribute{name=Name, value=Value}
-                        |Attrs
-                        ], Conference) ->
+                        | Attrs
+                        ]
+                       ,Conference
+                       ) ->
     C = xml_attr_to_conference(Conference, Name, Value),
     xml_attrs_to_conference(Attrs, C).
 
@@ -609,7 +627,9 @@ xml_members_to_participants([], _) -> [];
 xml_members_to_participants([#xmlElement{name='members'
                                         ,content=XmlElements
                                         }
-                            |_], #conference{name=Name, uuid=UUID, node=Node}) ->
+                            |_]
+                           ,#conference{name=Name, uuid=UUID, node=Node}
+                           ) ->
     [xml_member_to_participant(Xml, #participant{node=Node
                                                 ,conference_name=Name
                                                 ,conference_uuid=UUID
@@ -625,8 +645,10 @@ xml_member_to_participant([], Participant) -> Participant;
 xml_member_to_participant([#xmlElement{name='uuid'
                                       ,content=UUID
                                       }
-                          |XmlElements
-                          ], Participant) ->
+                          | XmlElements
+                          ]
+                         ,Participant
+                         ) ->
     CallId = kz_http_util:urldecode(xml_text_to_binary(UUID)),
     lager:debug("uuid ~s callid ~s", [xml_text_to_binary(UUID), CallId]),
     xml_member_to_participant(XmlElements
@@ -657,7 +679,9 @@ get_conference_dictionary(Conferences) ->
 get_conference_dictionary([], Dictionary) -> Dictionary;
 get_conference_dictionary([#conference{uuid=UUID}=Conference
                           | Conferences
-                          ], Dictionary) ->
+                          ]
+                         ,Dictionary
+                         ) ->
     get_conference_dictionary(Conferences, dict:store(UUID, Conference, Dictionary));
 get_conference_dictionary([_|Conferences], Dictionary) ->
     get_conference_dictionary(Conferences, Dictionary).
@@ -670,7 +694,9 @@ get_participant_dictionary(Participants) ->
 get_participant_dictionary([], Dictionary) -> Dictionary;
 get_participant_dictionary([#participant{uuid=UUID}=Participant
                            | Participants
-                           ], Dictionary) ->
+                           ]
+                          ,Dictionary
+                          ) ->
     get_participant_dictionary(Participants, dict:store(UUID, Participant, Dictionary));
 get_participant_dictionary([_|Participants], Dictionary) ->
     get_participant_dictionary(Participants, Dictionary).
@@ -751,8 +777,10 @@ print_details(Match) ->
 print_details('$end_of_table', Count) ->
     io:format("~nFound ~p conferences~n", [Count]);
 print_details({[#conference{name=Name}=Conference]
-              ,Continuation}
-             ,Count) ->
+              ,Continuation
+              }
+             ,Count
+             ) ->
     io:format("~n"),
     _ = [io:format("~-19s: ~s~n", [K, kz_term:to_binary(V)])
          || {K, V} <- conference_to_props(Conference)

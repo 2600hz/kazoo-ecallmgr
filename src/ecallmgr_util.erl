@@ -119,7 +119,7 @@
 -define(KZ_MOH_OPTION_DEFAULT_KEY(Option), [kz_json:normalize_key(HoldMediaOption) || HoldMediaOption <- [?KZ_MOH_OPTIONS_KEY, Option]]).
 -define(KZ_MOH_OPTION_DEFAULT(Option,Default), kapps_config:get_boolean(?APP_NAME, ?KZ_MOH_OPTION_DEFAULT_KEY(Option), Default)).
 
--type send_cmd_ret() :: fs_sendmsg_ret() | fs_api_ret().
+-type send_cmd_ret() :: freeswitch:fs_sendmsg_ret() | freeswitch:fs_api_return().
 -export_type([send_cmd_ret/0]).
 
 -record(bridge_endpoint, {invite_format = <<"username">> :: kz_term:ne_binary()

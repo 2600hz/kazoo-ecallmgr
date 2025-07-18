@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2024, 2600Hz
+%%% @copyright (C) 2012-2025, 2600Hz
 %%% @doc Send config commands to FS
 %%%
 %%% @author Edouard Swiac
@@ -35,7 +35,7 @@ init() ->
     _ = kazoo_bindings:bind(<<"fetch.configuration.configuration.*.*.sofia.conf">>, ?MODULE, 'sofia'),
     'ok'.
 
--spec sofia(map()) -> fs_sendmsg_ret().
+-spec sofia(map()) -> freeswitch:fs_sendmsg_ret().
 sofia(#{fetch_id := Id} = Ctx) ->
     kz_log:put_callid(Id),
     case kapps_config:is_true(?APP_NAME, <<"sofia_conf">>, 'false') of

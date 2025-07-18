@@ -24,6 +24,51 @@
 
 -define(ROUTE_WINNER_TIMEOUT, 60 * ?MILLISECONDS_IN_SECOND).
 
+-type dialplan_callback() :: fun((dialplan_context()) -> 'ok' | {'ok', dialplan_context()}).
+-type dialplan_exit_fun() :: fun((dialplan_context()) -> 'ok').
+-type dialplan_init_fun() :: fun((dialplan_context()) -> 'ok').
+
+-type dialplan_timers() :: #{atom() => pos_integer()}. %% #{Name => TimestampUs
+-type dialplan_reply() ::  #{payload => kzd_fetch:data() | kz_json:object()}.
+-type dialplan_winner() :: #{payload => kzd_fetch:data()}.
+-type dialplan_xml_fun() :: fun((kz_term:ne_binary(), kz_json:objects(), kz_json:object(), dialplan_context()) -> {'ok', iolist()}).
+
+-type dialplan_context() :: #{amqp_worker => pid() %% AMQP Worker
+                             ,authz_timeout => timeout()
+                             ,authz_worker => kz_term:pid_ref()
+                             ,basic => amqp_basic()
+                             ,blocked => boolean() %% whether call progress has been blocked
+                             ,call_id => kz_term:api_ne_binary()
+                             ,callback => dialplan_callback()
+                             ,channel => pid() %% AMQP Channel
+                             ,control_p => pid() %% Ecallmgr control PID
+                             ,control_q => kz_term:ne_binary() %% AMQP Control Queue
+                             ,controller_q => kz_term:ne_binary() %% AMQP Queue of controller
+                             ,core_uuid => kz_term:ne_binary() | atom() %% FS UUID
+                             ,exit_fun => dialplan_exit_fun()
+                             ,fetch_id => kz_term:api_ne_binary()
+                             ,init_fun => dialplan_init_fun()
+                             ,initial_ccvs => kz_json:object()
+                             ,node => atom() %% FS Node
+                             ,options => kz_term:proplist()
+                             ,payload => kzd_fetch:data()
+                             ,reply => dialplan_reply()
+                             ,request => kapi_route:req()
+                             ,request_headers => kz_term:proplist()
+                             ,route_resp_xml_fun => dialplan_xml_fun()
+                             ,routing => kz_term:ne_binary()
+                             ,section => atom()
+                             ,server_id => kz_term:api_ne_binary()
+                             ,start_result => {'ok', pid()} | {'error', any()}
+                             ,tag => kz_term:api_ne_binary() | atom()
+                             ,timeout => non_neg_integer()
+                             ,timer => dialplan_timers()
+                             ,version => atom()
+                             ,winner => dialplan_winner()
+                             }.
+
+-export_type([dialplan_context/0]).
+
 %%%=============================================================================
 %%% API
 %%%=============================================================================

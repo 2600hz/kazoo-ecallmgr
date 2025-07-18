@@ -12,9 +12,20 @@
 %%%-----------------------------------------------------------------------------
 -module(ecallmgr_fs_channel).
 
--export([node/1, set_node/2
+%% record accessors
+-export([node/1
+        ,handling_locally/1
+        ,is_loopback/1
+        ,account_id/1
+        ,uuid/1
         ,former_node/1
         ,is_bridged/1
+        ,authorizing_id/1
+        ,resource_id/1
+        ,callflow_id/1
+        ]).
+
+-export([set_node/2
         ,exists/1
         ,import_moh/1
         ,set_account_id/2
@@ -46,6 +57,8 @@
 -include_lib("kazoo_sip/include/kzsip_uri.hrl").
 
 -define(SYNC_TIMEOUT, 5 * ?MILLISECONDS_IN_SECOND).
+
+-export_type([channel/0]).
 
 %%%=============================================================================
 %%% API
@@ -91,10 +104,12 @@ format('api', Channel) -> to_api_json(Channel);
 format('proplist', Channel) -> to_props(Channel);
 format('record', Channel) -> Channel.
 
--spec node(kz_term:ne_binary()) ->
+-spec node(kz_term:ne_binary() | channel()) ->
+          atom() |
           {'ok', atom()} |
           {'error', 'not_found'}.
-node(UUID) ->
+node(#channel{node=Node}) -> Node;
+node(<<UUID/binary>>) ->
     MatchSpec = [{#channel{uuid = '$1', node = '$2', _ = '_'}
                  ,[{'=:=', '$1', {'const', UUID}}]
                  ,['$2']}
@@ -117,9 +132,10 @@ set_node(Node, UUID) ->
         end,
     ecallmgr_fs_channels:updates(UUID, Updates).
 
--spec former_node(kz_term:ne_binary()) ->
+-spec former_node(kz_term:ne_binary() | channel()) ->
           {'ok', atom()} |
           {'error', any()}.
+former_node(#channel{former_node=FormerNode}) -> {'ok', FormerNode};
 former_node(UUID) ->
     MatchSpec = [{#channel{uuid = '$1', former_node = '$2', _ = '_'}
                  ,[{'=:=', '$1', {'const', UUID}}]
@@ -132,6 +148,7 @@ former_node(UUID) ->
     end.
 
 -spec is_bridged(kz_term:ne_binary()) -> boolean().
+is_bridged(#channel{other_leg=OtherLeg}) -> is_binary(OtherLeg);
 is_bridged(UUID) ->
     MatchSpec = [{#channel{uuid = '$1', other_leg = '$2', _ = '_'}
                  ,[{'=:=', '$1', {'const', UUID}}]
@@ -142,6 +159,15 @@ is_bridged(UUID) ->
         [Bin] when is_binary(Bin) -> lager:debug("is bridged to: ~s", [Bin]), 'true';
         _E -> lager:debug("not bridged: ~p", [_E]), 'false'
     end.
+
+-spec authorizing_id(channel()) -> kz_term:api_ne_binary().
+authorizing_id(#channel{authorizing_id=AuthId}) -> AuthId.
+
+-spec resource_id(channel()) -> kz_term:api_ne_binary().
+resource_id(#channel{resource_id=ResourceId}) -> ResourceId.
+
+-spec callflow_id(channel()) -> kz_term:api_ne_binary().
+callflow_id(#channel{callflow_id=CallflowId}) -> CallflowId.
 
 -spec exists(kz_term:ne_binary()) -> boolean().
 exists(UUID) -> ets:member(?CHANNELS_TBL, UUID).
@@ -535,6 +561,19 @@ switch_url(Node, JObj, Profile) ->
         'undefined' -> ecallmgr_fs_nodes:sip_url(Node, Profile);
         URL -> URL
     end.
+
+-spec handling_locally(channel()) -> boolean().
+handling_locally(#channel{handling_locally=IsLocal}) -> IsLocal.
+
+-spec is_loopback(channel()) -> boolean().
+is_loopback(#channel{is_loopback=IsLoopback}) -> IsLoopback.
+
+-spec account_id(channel()) -> kz_term:api_ne_binary().
+account_id(#channel{account_id=AccountId}) -> AccountId.
+
+-spec uuid(channel()) -> kz_term:api_ne_binary().
+uuid(#channel{uuid=UUID}) -> UUID.
+
 
 -spec handling_locally(kz_term:api_binary(), kz_term:api_binary()) -> boolean().
 handling_locally('undefined', 'undefined') -> 'false';

@@ -237,7 +237,7 @@ conference_profile_elem({K, JObj}, Acc) ->
     Children = lists:foldl(fun conference_profile_param/2, [], kz_json:to_proplist(JObj)),
     [named_el(kz_term:to_atom(K, 'true'), Children) | Acc].
 
--spec route_resp_xml(atom(), kz_term:api_terms(), dialplan_context()) -> {'ok', iolist()}.
+-spec route_resp_xml(atom(), kz_term:api_terms(), ecallmgr_fs_fetch_dialplan:dialplan_context()) -> {'ok', iolist()}.
 route_resp_xml(Section, [_|_]=RespProp, DialplanContext) ->
     route_resp_xml(Section, kz_json:from_list(RespProp), DialplanContext);
 route_resp_xml(Section, RespJObj, DialplanContext) ->
@@ -290,7 +290,7 @@ should_bypass_media(RouteJObj) ->
         _ -> "false" %% default to not bypassing media
     end.
 
--spec route_resp_xml(kz_term:ne_binary(), kz_json:objects(), kz_json:object(), dialplan_context()) -> {'ok', iolist()}.
+-spec route_resp_xml(kz_term:ne_binary(), kz_json:objects(), kz_json:object(), ecallmgr_fs_fetch_dialplan:dialplan_context()) -> {'ok', iolist()}.
 route_resp_xml(<<"bridge">>, Routes, JObj, DialplanContext) ->
     lager:debug("creating a bridge XML response"),
     Bridge = [route_resp_progress(JObj)
@@ -413,7 +413,7 @@ route_resp_bridge_id() ->
     Action = action_el(<<"export">>, [?SET_CCV(<<"Bridge-ID">>, <<"${UUID}">>)], 'true'),
     condition_el(Action, <<"${", (?CCV(<<"Bridge-ID">>))/binary, "}">>, <<"^$">>).
 
--spec route_resp_set_originating_proxy(dialplan_context()) -> kz_types:xml_el() | 'undefined'.
+-spec route_resp_set_originating_proxy(ecallmgr_fs_fetch_dialplan:dialplan_context()) -> kz_types:xml_el() | 'undefined'.
 route_resp_set_originating_proxy(#{payload := Payload}) ->
     case kz_json:get_ne_binary_value(<<"Originating-Proxy">>, Payload) of
         'undefined' -> 'undefined';
@@ -449,7 +449,7 @@ route_resp_log_winning_node() ->
 route_resp_set_winning_node() ->
     action_el(<<"export">>, [?SET_CCV(<<"Ecallmgr-Node">>, (kz_term:to_binary(node())))], 'true').
 
--spec route_resp_fire_route_win(kz_json:object(), dialplan_context()) -> kz_types:xml_el().
+-spec route_resp_fire_route_win(kz_json:object(), ecallmgr_fs_fetch_dialplan:dialplan_context()) -> kz_types:xml_el().
 route_resp_fire_route_win(JObj, #{'control_q' := ControlQ
                                  ,'fetch_id' := FetchId
                                  }) ->
@@ -465,7 +465,7 @@ route_resp_fire_route_win(JObj, #{'control_q' := ControlQ
     EventApp = kz_app_config:get_ne_binary(?APP, [<<"dialplan">>, <<"apps">>, <<"event">>], <<"kz_deliver_event">>),
     action_el(EventApp, kz_binary:join(Args, <<",">>)).
 
--spec route_resp_channel_update(kz_json:object(), dialplan_context()) -> kz_types:xml_el().
+-spec route_resp_channel_update(kz_json:object(), ecallmgr_fs_fetch_dialplan:dialplan_context()) -> kz_types:xml_el().
 route_resp_channel_update(_JObj, _Context) ->
     Params = [{<<"Event-Name">>, <<"CHANNEL_DATA">>}],
     Args = [<<K/binary, "=", V/binary>> || {K, V} <- Params, kz_term:is_not_empty(V)],
@@ -548,14 +548,14 @@ route_resp_progress(JObj) ->
         'false' -> action_el(<<"ring_ready">>, 'undefined', 'true')
     end.
 
--spec maybe_start_dtmf_action(dialplan_context()) -> 'undefined' | kz_types:xml_el().
+-spec maybe_start_dtmf_action(ecallmgr_fs_fetch_dialplan:dialplan_context()) -> 'undefined' | kz_types:xml_el().
 maybe_start_dtmf_action(DialplanContext) ->
     case kapps_config:is_true(?APP_NAME, <<"should_detect_inband_dtmf">>, 'false') of
         'false' -> 'undefined';
         'true' -> check_dtmf_type(DialplanContext)
     end.
 
--spec check_dtmf_type(dialplan_context()) -> 'undefined' | kz_types:xml_el().
+-spec check_dtmf_type(ecallmgr_fs_fetch_dialplan:dialplan_context()) -> 'undefined' | kz_types:xml_el().
 check_dtmf_type(#{payload := Payload}) ->
     case kz_json:get_value(<<"variable_switch_r_sdp">>, Payload, <<"101 telephone-event">>) of
         <<"101 telephone-event">> -> 'undefined';
@@ -1039,7 +1039,7 @@ arrange_acl_node({_, JObj}, Dict) ->
             orddict:store(AclList, prepend_child(acl_list_el(AclList), NodeEl), Dict)
     end.
 
--spec hunt_context(dialplan_context()) -> kz_term:api_ne_binary().
+-spec hunt_context(ecallmgr_fs_fetch_dialplan:dialplan_context()) -> kz_term:api_ne_binary().
 hunt_context(#{payload:=FSJObj}) ->
     kzd_freeswitch:hunt_context(FSJObj, ?DEFAULT_FREESWITCH_CONTEXT).
 
@@ -1047,7 +1047,7 @@ hunt_context(#{payload:=FSJObj}) ->
 context(JObj) ->
     kz_json:get_ne_binary_value(<<"Context">>, JObj, ?DEFAULT_FREESWITCH_CONTEXT).
 
--spec context(kz_json:object(), dialplan_context()) -> kz_term:api_ne_binary().
+-spec context(kz_json:object(), ecallmgr_fs_fetch_dialplan:dialplan_context()) -> kz_term:api_ne_binary().
 context(JObj, DialplanContext) ->
     kz_json:get_ne_binary_value(<<"Context">>, JObj, hunt_context(DialplanContext)).
 
@@ -1596,7 +1596,7 @@ event_filters_el(Filters) ->
                ,attributes=[xml_attrib('type', <<"whitelist">>)]
                }.
 
--spec route_resp_park_xml(kz_json:object(), dialplan_context()) -> kz_types:xml_els().
+-spec route_resp_park_xml(kz_json:object(), ecallmgr_fs_fetch_dialplan:dialplan_context()) -> kz_types:xml_els().
 route_resp_park_xml(JObj, DialplanContext) ->
     Exten = [route_resp_progress(JObj)
             ,route_resp_log_winning_node()
@@ -1617,7 +1617,7 @@ route_resp_park_xml(JObj, DialplanContext) ->
             ],
     [E || E <- Exten, E =/= 'undefined'].
 
--spec route_resp_set_control_info(dialplan_context()) -> kz_types:xml_el().
+-spec route_resp_set_control_info(ecallmgr_fs_fetch_dialplan:dialplan_context()) -> kz_types:xml_el().
 route_resp_set_control_info(#{control_q := ControlQ
                              ,control_p := ControlP
                              ,fetch_id := FetchId
@@ -1877,7 +1877,7 @@ call_forward_dial_string(CallForward) ->
     Vars = channel_vars(CallForward),
     list_to_binary(["[^^!", kz_binary:join(Vars, <<"!">>), "]loopback/", URI]).
 
-filter_call_fwd_prop({<<"Call-Forward-", _/binary>>, _}) -> true;
+filter_call_fwd_prop({<<"Call-Forward-", _/binary>>, _}) -> 'true';
 filter_call_fwd_prop({Key, _}) ->
     lists:member(Key, ?CALLFWD_FILTER).
 

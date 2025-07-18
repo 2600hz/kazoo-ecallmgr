@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2011-2024, 2600Hz
+%%% @copyright (C) 2011-2025, 2600Hz
 %%% @doc Directory lookups from FS
 %%%
 %%% This Source Code Form is subject to the terms of the Mozilla Public
@@ -41,7 +41,7 @@ init() ->
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
--spec fetch_limit(map()) -> fs_handlecall_ret().
+-spec fetch_limit(map()) -> freeswitch:fs_handlecall_ret().
 fetch_limit(#{node := Node, fetch_id := FetchId, payload := JObj}=Context) ->
     kz_log:put_callid(JObj),
     lager:debug("received limit request ~s for ~s from ~s"
@@ -55,7 +55,7 @@ endpoint(JObj) ->
     Args = binary:split(EndpointId, <<"@">>),
     list_to_tuple(Args).
 
--spec fetch_limit(map(), tuple()) -> fs_handlecall_ret().
+-spec fetch_limit(map(), tuple()) -> freeswitch:fs_handlecall_ret().
 fetch_limit(Context, {EndpointId, AccountId}) ->
     check_limit(Context#{endpoint_id => EndpointId, account_id => AccountId});
 fetch_limit(#{fetch_id := FetchId, node := Node, payload := JObj}=Context, _) ->
@@ -64,7 +64,7 @@ fetch_limit(#{fetch_id := FetchId, node := Node, payload := JObj}=Context, _) ->
                ),
     limit_not_found(Context).
 
--spec check_limit(map()) -> fs_handlecall_ret().
+-spec check_limit(map()) -> freeswitch:fs_handlecall_ret().
 check_limit(#{payload := JObj} = Context) ->
     case kz_json:get_integer_value([<<"Fetch-Params">>, <<"Channel-Limit">>], JObj) of
         'undefined' -> check_endpoint_limits(Context);
@@ -102,7 +102,7 @@ check_endpoint_limit(#{endpoint_id := EndpointId, account_id := AccountId} = Con
     Count = kz_endpoint:channel_count(EndpointId, AccountId),
     reply_limit(Context, Count < Value).
 
--spec reply_limit(map(), boolean()) -> fs_handlecall_ret().
+-spec reply_limit(map(), boolean()) -> freeswitch:fs_handlecall_ret().
 reply_limit(#{fetch_id := FetchId
              ,node := Node
              ,payload := JObj
@@ -133,7 +133,7 @@ limit_el(Id, Value) ->
                            ]
                }.
 
--spec limit_not_found(map()) -> fs_handlecall_ret().
+-spec limit_not_found(map()) -> freeswitch:fs_handlecall_ret().
 limit_not_found(#{fetch_id := FetchId, node := Node, payload := JObj} = Context) ->
     {'ok', Xml} = ecallmgr_fs_xml:not_found(<<"limit">>),
     lager:debug("sending directory limit (~s) not found XML to ~w for request ~s"

@@ -25,6 +25,13 @@
 
 -define(RECORD_SOFTWARE, kapps_config:get_ne_binary(?APP_NAME, <<"recording_software_name">>, <<"2600Hz, Inc.'s Kazoo">>)).
 
+-type fs_app() :: {kz_term:ne_binary(), binary() | 'noop'} |
+                  {kz_term:ne_binary(), kz_term:ne_binary(), atom()} |
+                  {kz_term:ne_binary(), kz_term:ne_binary(), atom(), kz_term:proplist()}.
+-type fs_apps() :: [fs_app()].
+
+-export_type([fs_app/0, fs_apps/0]).
+
 -spec exec_cmd(atom(), kz_term:ne_binary(), kz_json:object()) ->
           'ok' |
           freeswitch:fs_api_return() |
@@ -1201,7 +1208,7 @@ record_call(_UUID, <<"stop">>, JObj) ->
 
 -spec record_call_default_extension() -> kz_term:ne_binary().
 record_call_default_extension() ->
-    kz_app_config:get_ne_binary(media, <<"call_recording.extension">>, <<"mp3">>).
+    kz_app_config:get_ne_binary('media', <<"call_recording.extension">>, <<"mp3">>).
 
 -spec record_call_default_media_name() -> kz_term:ne_binary().
 record_call_default_media_name() ->

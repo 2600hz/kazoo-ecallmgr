@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2024, 2600Hz
+%%% @copyright (C) 2012-2025, 2600Hz
 %%% @doc
 %%% This Source Code Form is subject to the terms of the Mozilla Public
 %%% License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -31,6 +31,7 @@
 -export([init/1]).
 
 -include("ecallmgr.hrl").
+-include_lib("ecallmgr/include/fs_events.hrl").
 
 -define(NODE_MODULES,
         [<<"node">>

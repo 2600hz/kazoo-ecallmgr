@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2011-2024, 2600Hz
+%%% @copyright (C) 2011-2025, 2600Hz
 %%% @doc Directory lookups from FS
 %%%
 %%% @author James Aimonetti
@@ -39,7 +39,7 @@ init() ->
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
--spec fetch_directory(map()) -> fs_handlecall_ret().
+-spec fetch_directory(map()) -> freeswitch:fs_handlecall_ret().
 fetch_directory(#{fetch_id := FetchId, payload := JObj}=Context) ->
     kz_log:put_callid(JObj),
     FetchAction = kzd_fetch:fetch_action(JObj, <<"sip_auth">>),
@@ -128,15 +128,15 @@ maybe_log_directory_cauth_token(_FetchAction, #{payload := JObj}) ->
         Token -> <<" with token ", Token/binary>>
     end.
 
--spec lookup_directory(map()) -> fs_handlecall_ret().
+-spec lookup_directory(map()) -> freeswitch:fs_handlecall_ret().
 lookup_directory(#{payload := JObj} = Context) ->
     lookup_directory(kzd_fetch:fetch_user(JObj), kzd_fetch:fetch_key_value(JObj), Context).
 
--spec lookup_directory(kz_term:ne_binary(), map()) -> fs_handlecall_ret().
+-spec lookup_directory(kz_term:ne_binary(), map()) -> freeswitch:fs_handlecall_ret().
 lookup_directory(EndpointId, #{payload := JObj} = Context) ->
     lookup_directory(EndpointId, kzd_fetch:fetch_key_value(JObj), Context).
 
--spec lookup_directory(kz_term:api_ne_binary(), kz_term:api_ne_binary(), map()) -> fs_handlecall_ret().
+-spec lookup_directory(kz_term:api_ne_binary(), kz_term:api_ne_binary(), map()) -> freeswitch:fs_handlecall_ret().
 lookup_directory('undefined', _AccountId, #{fetch_id := FetchId} = Context) ->
     lager:info("directory lookup unable to progress because the endpoint id is not present for request ~s"
               ,[FetchId]
@@ -155,7 +155,7 @@ lookup_directory(_EndpointId, _AccountId, #{fetch_id := FetchId} = Context) ->
               ),
     directory_not_found(Context).
 
--spec directory_not_found(map()) -> fs_handlecall_ret().
+-spec directory_not_found(map()) -> freeswitch:fs_handlecall_ret().
 directory_not_found(#{node := Node, fetch_id := FetchId} = Context) ->
     {'ok', Xml} = ecallmgr_fs_xml:not_found(<<"directory">>),
     lager:warning("sending directory not found to ~w as reply for request ~s"
@@ -163,7 +163,7 @@ directory_not_found(#{node := Node, fetch_id := FetchId} = Context) ->
                  ),
     freeswitch:fetch_reply(Context#{reply => iolist_to_binary(Xml)}).
 
--spec validate_token(map()) -> fs_handlecall_ret().
+-spec validate_token(map()) -> freeswitch:fs_handlecall_ret().
 validate_token(#{fetch_id := FetchId, payload := JObj}=Context) ->
     case kz_json:get_ne_binary_value(<<"JWT-Token">>, kzd_fetch:cauth(JObj)) of
         'undefined' ->
@@ -176,7 +176,7 @@ validate_token(#{fetch_id := FetchId, payload := JObj}=Context) ->
 
 -type validate_token_result() :: {'ok', kz_json:object()} | {'error', any()}.
 
--spec validate_token(map(), validate_token_result()) -> fs_handlecall_ret().
+-spec validate_token(map(), validate_token_result()) -> freeswitch:fs_handlecall_ret().
 validate_token(#{fetch_id := FetchId}=Context, {'error', Error}) ->
     lager:info("fetch request ~s has an invalid token: ~s"
               ,[FetchId, Error]
@@ -195,7 +195,7 @@ validate_token(#{payload := JObj, auth_token := Token} = Context, {'ok', Claims}
     Options = [{'token', Token}],
     fetch_directory(EndpointId, AccountId, Ctx, Options).
 
--spec validate_rpc_token(map()) -> fs_handlecall_ret().
+-spec validate_rpc_token(map()) -> freeswitch:fs_handlecall_ret().
 validate_rpc_token(#{fetch_id := FetchId, payload := JObj}=Context) ->
     case kz_json:get_ne_binary_value(<<"Token">>, kzd_fetch:cauth(JObj)) of
         'undefined' ->
@@ -208,7 +208,7 @@ validate_rpc_token(#{fetch_id := FetchId, payload := JObj}=Context) ->
 
 -type validate_rpc_token_result() :: {'ok', kz_json:object()} | {'error', any()}.
 
--spec validate_rpc_token(map(), validate_rpc_token_result()) -> fs_handlecall_ret().
+-spec validate_rpc_token(map(), validate_rpc_token_result()) -> freeswitch:fs_handlecall_ret().
 validate_rpc_token(#{fetch_id := FetchId}=Context, {'error', Error}) ->
     lager:info("fetch request ~s has an invalid token: ~p"
               ,[FetchId, Error]
@@ -264,7 +264,7 @@ send_reply(#{node := Node, fetch_id := FetchId} = Context) ->
                ),
     freeswitch:fetch_reply(Context).
 
--spec lookup_registrar(map()) -> fs_handlecall_ret().
+-spec lookup_registrar(map()) -> freeswitch:fs_handlecall_ret().
 lookup_registrar(#{payload := JObj}=Context) ->
     EndpointId = kzd_fetch:fetch_user(JObj),
     AccountId = kzd_fetch:fetch_key_value(JObj),

@@ -40,27 +40,6 @@
 
 -define(RESTRICTED_PUBLISHING, kapps_config:is_true(?APP_NAME, <<"restrict_channel_event_publisher">>, 'true')).
 
--type fs_app() :: {kz_term:ne_binary(), binary() | 'noop'} |
-                  {kz_term:ne_binary(), kz_term:ne_binary(), atom()} |
-                  {kz_term:ne_binary(), kz_term:ne_binary(), atom(), kz_term:proplist()}.
--type fs_apps() :: [fs_app()].
-
--type fs_api_ret()       :: {'ok', binary()} |
-                            {'error', 'badarg'} |
-                            'timeout'.
--type fs_sendmsg_ret()   :: 'ok' |
-                            {'error', 'badarg' | 'badmem' | 'nosession'} |
-                            'timeout'.
--type fs_sendevent_ret() :: 'ok' |
-                            {'error', 'badarg' | 'badmem'} |
-                            'timeout'.
--type fs_bind_ret()      :: 'ok' |
-                            {'error', 'badarg' | 'badmem'} |
-                            'timeout'.
--type fs_handlecall_ret() :: 'ok' |
-                             {'error', 'badarg' | 'session_attach_failed' | 'badsession' | 'baduuid'} |
-                             'timeout'.
-
 -record(channel, {uuid :: kz_term:api_ne_binary() | '$1' | '$2' | '_'
                  ,destination :: kz_term:api_ne_binary() | '_'
                  ,request :: kz_term:api_ne_binary() | '_'
@@ -475,36 +454,6 @@
                               ,{<<"intercept">>, <<"call_pickup">>}
                               ]).
 
--define(FAX_EVENTS, ['spandsp::txfaxresult'
-                    ,'spandsp::rxfaxresult'
-                    ,'spandsp::txfaxpageresult'
-                    ,'spandsp::rxfaxpageresult'
-                    ,'spandsp::txfaxnegociateresult'
-                    ,'spandsp::rxfaxnegociateresult'
-                    ]).
-
--define(FS_SOFIA_TRANSFER_EVENTS, ['sofia::transferor'
-                                  ,'sofia::transferee'
-                                  ,'sofia::replaced'
-                                  ,'sofia::intercepted'
-                                  ]).
-
--define(FS_EVENTS, [{'channel', ['CHANNEL_CREATE', 'CHANNEL_ANSWER', 'CHANNEL_DESTROY']}
-                   ,{'bridge', ['CHANNEL_BRIDGE', 'CHANNEL_UNBRIDGE']}
-                   ,{'media', ['DETECTED_TONE', 'DTMF','CHANNEL_PROGRESS','CHANNEL_PROGRESS_MEDIA']}
-                   ,{'record', ['RECORD_START', 'RECORD_STOP', 'RECORD_PAUSE', 'RECORD_RESUME', 'RECORD_MASK', 'RECORD_UNMASK']}
-                   ,{'callflow', ['ROUTE_WINNER', 'CHANNEL_EXECUTE_COMPLETE', 'CHANNEL_APP_EXECUTE_COMPLETE', 'CHANNEL_METAFLOW']}
-                   ,{'presence', ['PRESENCE_IN']}
-                   ,{'channel_full_update', ['CHANNEL_DATA','CHANNEL_SYNC','CALL_UPDATE']}
-                   ,{'channel_update', ['CHANNEL_HOLD','CHANNEL_UNHOLD']}
-                   ,{'conference', ['conference::maintenance']}
-                   ,{'fax', ?FAX_EVENTS}
-                   ,{'kazoo', ['kazoo::noop', 'kazoo::masquerade']}
-                   ,{'transfer', ?FS_SOFIA_TRANSFER_EVENTS}
-                   ,{'loopback', ['loopback::bowout', 'loopback::direct']}
-                   ,{'cdr', ['KZ_CDR']}
-                   ]).
-
 -define(FS_FETCH_SECTIONS, ['configuration'
                            ,'directory'
                            ,'dialplan'
@@ -559,55 +508,6 @@
 -define(SEPARATOR_ENTERPRISE, <<":_:">>).
 -define(SEPARATOR_SIMULTANEOUS, <<",">>).
 -define(SEPARATOR_SINGLE, <<"|">>).
-
-
--define(NODE_MODULES_KEY(R), [<<"configuration">>
-                             ,R
-                             ,<<"modules">>
-                             ]).
-
--type dialplan_callback() :: fun((dialplan_context()) -> 'ok' | {'ok', dialplan_context()}).
--type dialplan_exit_fun() :: fun((dialplan_context()) -> 'ok').
--type dialplan_init_fun() :: fun((dialplan_context()) -> 'ok').
-
--type dialplan_timers() :: #{atom() => pos_integer()}. %% #{Name => TimestampUs
--type dialplan_reply() ::  #{payload => kzd_fetch:data() | kz_json:object()}.
--type dialplan_winner() :: #{payload => kzd_fetch:data()}.
--type dialplan_xml_fun() :: fun((kz_term:ne_binary(), kz_json:objects(), kz_json:object(), dialplan_context()) -> {'ok', iolist()}).
-
--type dialplan_context() :: #{amqp_worker => pid() %% AMQP Worker
-                             ,authz_timeout => timeout()
-                             ,authz_worker => kz_term:pid_ref()
-                             ,basic => amqp_basic()
-                             ,blocked => boolean() %% whether call progress has been blocked
-                             ,call_id => kz_term:api_ne_binary()
-                             ,callback => dialplan_callback()
-                             ,channel => pid() %% AMQP Channel
-                             ,control_p => pid() %% Ecallmgr control PID
-                             ,control_q => kz_term:ne_binary() %% AMQP Control Queue
-                             ,controller_q => kz_term:ne_binary() %% AMQP Queue of controller
-                             ,core_uuid => kz_term:ne_binary() | atom() %% FS UUID
-                             ,exit_fun => dialplan_exit_fun()
-                             ,fetch_id => kz_term:api_ne_binary()
-                             ,init_fun => dialplan_init_fun()
-                             ,initial_ccvs => kz_json:object()
-                             ,node => atom() %% FS Node
-                             ,options => kz_term:proplist()
-                             ,payload => kzd_fetch:data()
-                             ,reply => dialplan_reply()
-                             ,request => kapi_route:req()
-                             ,request_headers => kz_term:proplist()
-                             ,route_resp_xml_fun => dialplan_xml_fun()
-                             ,routing => kz_term:ne_binary()
-                             ,section => atom()
-                             ,server_id => kz_term:api_ne_binary()
-                             ,start_result => {'ok', pid()} | {'error', any()}
-                             ,tag => kz_term:api_ne_binary() | atom()
-                             ,timeout => non_neg_integer()
-                             ,timer => dialplan_timers()
-                             ,version => atom()
-                             ,winner => dialplan_winner()
-                             }.
 
 -define(ECALLMGR_HRL, 'true').
 -endif.

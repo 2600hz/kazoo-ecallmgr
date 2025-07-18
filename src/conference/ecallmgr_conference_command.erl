@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2011-2024, 2600Hz
+%%% @copyright (C) 2011-2025, 2600Hz
 %%% @doc Execute conference commands
 %%%
 %%% This Source Code Form is subject to the terms of the Mozilla Public
@@ -52,7 +52,7 @@ api(Node, ConferenceId, {AppName, AppData}) ->
     freeswitch:api(Node, 'conference', Command).
 
 -spec get_conf_command(kz_term:ne_binary(), kz_term:ne_binary(), kz_json:object()) ->
-          fs_app() | fs_apps() |
+          ecallmgr_call_command:fs_app() | ecallmgr_call_command:fs_apps() |
           {'return', 'error' | kz_term:ne_binary()} |
           {'error', kz_term:ne_binary()}.
 

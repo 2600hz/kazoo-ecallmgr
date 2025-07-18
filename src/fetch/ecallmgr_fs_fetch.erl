@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2024, 2600Hz
+%%% @copyright (C) 2012-2025, 2600Hz
 %%% @doc Send config commands to FS
 %%%
 %%%
@@ -143,7 +143,7 @@ code_change(_OldVsn, State, _Extra) ->
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
--spec handle_fetch_req(atom(), kz_term:api_pid(), kz_json:object()) -> fs_sendmsg_ret().
+-spec handle_fetch_req(atom(), kz_term:api_pid(), kz_json:object()) -> freeswitch:fs_sendmsg_ret().
 handle_fetch_req(Node, Channel, JObj) ->
     kz_log:put_callid(JObj),
     _ = kz_amqp_channel:consumer_channel(Channel),
@@ -174,7 +174,7 @@ handle_fetch_req(Node, Channel, JObj) ->
         _ -> 'ok'
     end.
 
--spec not_found(map()) -> fs_sendmsg_ret().
+-spec not_found(map()) -> freeswitch:fs_sendmsg_ret().
 not_found(Ctx) ->
     {'ok', XmlResp} = ecallmgr_fs_xml:not_found(),
     freeswitch:fetch_reply(Ctx#{reply => iolist_to_binary(XmlResp)}).

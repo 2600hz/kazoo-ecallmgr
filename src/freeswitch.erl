@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2024, 2600Hz
+%%% @copyright (C) 2010-2025, 2600Hz
 %%% @doc
 %%% This Source Code Form is subject to the terms of the Mozilla Public
 %%% License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -74,9 +74,20 @@
 -type fs_api_error():: {'error', 'baduuid' | 'timeout' | 'exception' | binary()}.
 -type fs_api_return() :: fs_api_ok() | fs_api_error() | 'ok'.
 -type fs_json_api_return() :: fs_json_api_ok() | fs_api_error().
+
+-type fs_sendmsg_ret()   :: 'ok' |
+                            {'error', 'badarg' | 'badmem' | 'nosession'} |
+                            'timeout'.
+
+-type fs_handlecall_ret() :: 'ok' |
+                             {'error', 'badarg' | 'session_attach_failed' | 'badsession' | 'baduuid'} |
+                             'timeout'.
+
 -export_type([fs_api_ok/0
              ,fs_api_error/0
              ,fs_api_return/0
+             ,fs_sendmsg_ret/0
+             ,fs_handlecall_ret/0
              ,fs_json_api_ok/0
              ,fs_json_api_return/0
              ]).

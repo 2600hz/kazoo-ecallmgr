@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2024, 2600Hz
+%%% @copyright (C) 2012-2025, 2600Hz
 %%% @doc Send config commands to FS
 %%%
 %%% @author Edouard Swiac
@@ -35,7 +35,7 @@ init() ->
     _ = kazoo_bindings:bind(<<"fetch.configuration.configuration.*.*.acl.conf">>, ?MODULE, 'acl'),
     'ok'.
 
--spec acl(map()) -> fs_sendmsg_ret().
+-spec acl(map()) -> freeswitch:fs_sendmsg_ret().
 acl(#{node := Node, fetch_id := Id}=Ctx) ->
     kz_log:put_callid(Id),
     MediaACLs = ecallmgr_fs_acls:media_acls(),

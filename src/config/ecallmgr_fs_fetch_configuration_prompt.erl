@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2011-2024, 2600Hz
+%%% @copyright (C) 2011-2025, 2600Hz
 %%% @doc Directory lookups from FS
 %%%
 %%% This Source Code Form is subject to the terms of the Mozilla Public
@@ -36,7 +36,7 @@ init() ->
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
--spec fetch_prompt(map()) -> fs_handlecall_ret().
+-spec fetch_prompt(map()) -> freeswitch:fs_handlecall_ret().
 fetch_prompt(#{node := Node, fetch_id := FetchId, payload := JObj}=Ctx) ->
     kz_log:put_callid(FetchId),
     Media = kzd_fetch:fetch_key_value(JObj),
@@ -52,7 +52,7 @@ fetch_prompt(#{node := Node, fetch_id := FetchId, payload := JObj}=Ctx) ->
             freeswitch:fetch_reply(Ctx#{reply => iolist_to_binary(Xml)})
     end.
 
--spec prompt_not_found(map()) -> fs_handlecall_ret().
+-spec prompt_not_found(map()) -> freeswitch:fs_handlecall_ret().
 prompt_not_found(#{node := Node, payload := JObj} = Ctx) ->
     {'ok', Xml} = ecallmgr_fs_xml:not_found(),
     lager:debug("sending prompt (~s) not found XML to ~w", [kzd_fetch:fetch_key_value(JObj), Node]),

@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2024, 2600Hz
+%%% @copyright (C) 2012-2025, 2600Hz
 %%% @doc Send config commands to FS
 %%%
 %%% @author Edouard Swiac
@@ -39,7 +39,7 @@ init() ->
     _ = kazoo_bindings:bind(<<"fetch.languages.*.language_req">>, ?MODULE, 'language_req'),
     'ok'.
 
--spec language_req(map()) -> fs_sendmsg_ret().
+-spec language_req(map()) -> freeswitch:fs_sendmsg_ret().
 language_req(#{fetch_id := Id, payload := JObj} = Context) ->
     kz_log:put_callid(Id),
     {'ok', Xml} = language_resp_xml(JObj),

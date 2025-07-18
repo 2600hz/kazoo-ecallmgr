@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2012-2024, 2600Hz
+%%% @copyright (C) 2012-2025, 2600Hz
 %%% @doc Send config commands to FS
 %%%
 %%% @author Edouard Swiac
@@ -43,13 +43,13 @@ init() ->
     _ = kazoo_bindings:bind(<<"fetch.configuration.configuration.community.*.kazoo.conf">>, ?MODULE, 'kazoo'),
     'ok'.
 
--spec kazoo(map()) -> fs_sendmsg_ret().
+-spec kazoo(map()) -> freeswitch:fs_sendmsg_ret().
 kazoo(#{node := Node, fetch_id := Id, payload := JObj} = Ctx) ->
     kz_log:put_callid(Id),
     lager:debug("received configuration request for kazoo configuration ~p , ~p", [Node, Id]),
     fs_mod_kazoo_config(kz_api:event_name(JObj), Ctx).
 
--spec fs_mod_kazoo_config(kz_term:ne_binary(), map()) -> fs_sendmsg_ret().
+-spec fs_mod_kazoo_config(kz_term:ne_binary(), map()) -> freeswitch:fs_sendmsg_ret().
 fs_mod_kazoo_config(<<"COMMAND">>, #{payload := _JObj} = Ctx) ->
     lager:debug_unsafe("kazoo conf request : ~s", [kz_json:encode(_JObj)]),
     kazoo_req_not_handled(Ctx);
@@ -60,7 +60,7 @@ fs_mod_kazoo_config(Event, #{node := Node} = Ctx) ->
     lager:debug("unhandled mod kazoo config event : ~p : ~p", [Node, Event]),
     kazoo_req_not_handled(Ctx).
 
--spec fs_mod_kazoo_config_action(kz_term:api_ne_binary(), map()) -> fs_sendmsg_ret().
+-spec fs_mod_kazoo_config_action(kz_term:api_ne_binary(), map()) -> freeswitch:fs_sendmsg_ret().
 fs_mod_kazoo_config_action(<<"request-handlers">>, Ctx) ->
     try kazoo_config() of
         {'ok', Xml} -> freeswitch:fetch_reply(Ctx#{reply => Xml})
@@ -75,7 +75,7 @@ fs_mod_kazoo_config_action(Action, #{node := Node} = Ctx) ->
     lager:debug("unhandled mod kazoo config action : ~p : ~p", [Node, Action]),
     kazoo_req_not_handled(Ctx).
 
--spec kazoo_req_not_handled(map()) -> fs_sendmsg_ret().
+-spec kazoo_req_not_handled(map()) -> freeswitch:fs_sendmsg_ret().
 kazoo_req_not_handled(#{node := Node, fetch_id := Id} = Ctx) ->
     {'ok', NotHandled} = ecallmgr_fs_xml:not_found(),
     lager:debug("ignoring kazoo conf ~s: ~s", [Node, Id]),

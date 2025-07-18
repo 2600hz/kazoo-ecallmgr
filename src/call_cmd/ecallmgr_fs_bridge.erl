@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @copyright (C) 2010-2024, 2600Hz
+%%% @copyright (C) 2010-2025, 2600Hz
 %%% @doc Helpers for bridging in FreeSWITCH
 %%% @author James Aimonetti
 %%% @author Karl Anderson
@@ -434,18 +434,18 @@ build_endpoint_actions(Node, UUID, K, V, Acc) ->
     DP = kz_json:foldr(Fun, [], V),
     Acc ++ build_endpoint_action_dp(K, DP).
 
--spec build_endpoint_action(atom(), kz_term:ne_binary(), kz_term:ne_binary(), kz_json:object(), fs_apps()) ->
-          fs_apps().
+-spec build_endpoint_action(atom(), kz_term:ne_binary(), kz_term:ne_binary(), kz_json:object(), ecallmgr_call_command:fs_apps()) ->
+          ecallmgr_call_command:fs_apps().
 build_endpoint_action(Node, UUID, _K, V, Acc) ->
     lager:debug("building dialplan action for ~s", [_K]),
     DP = ecallmgr_call_command:fetch_dialplan(Node, UUID, V),
     Acc ++ DP.
 
--spec build_endpoint_action_dp(kz_term:ne_binary(), fs_apps()) -> ep_actions().
+-spec build_endpoint_action_dp(kz_term:ne_binary(), ecallmgr_call_command:fs_apps()) -> ep_actions().
 build_endpoint_action_dp(K, DP) ->
     build_endpoint_action_dp(endpoint_action_cmd(K), DP, 1, []).
 
--spec build_endpoint_action_dp(kz_term:ne_binary(), fs_apps(), pos_integer(), ep_actions()) -> ep_actions().
+-spec build_endpoint_action_dp(kz_term:ne_binary(), ecallmgr_call_command:fs_apps(), pos_integer(), ep_actions()) -> ep_actions().
 build_endpoint_action_dp(_K, [], _N, Acc) ->
     lists:reverse(Acc);
 build_endpoint_action_dp(K, [{App, Args} | DP], N, Acc) ->
@@ -481,17 +481,17 @@ build_bridge_actions(Node, UUID, K, V, Acc) ->
     DP = kz_json:foldr(Fun, [], V),
     Acc ++ build_bridge_action_dp(K, DP).
 
--spec build_bridge_action(atom(), kz_term:ne_binary(), kz_json:object(), fs_apps()) ->
-          fs_apps().
+-spec build_bridge_action(atom(), kz_term:ne_binary(), kz_json:object(), ecallmgr_call_command:fs_apps()) ->
+          ecallmgr_call_command:fs_apps().
 build_bridge_action(Node, UUID, V, Acc) ->
     DP = ecallmgr_call_command:fetch_dialplan(Node, UUID, V),
     Acc ++ DP.
 
--spec build_bridge_action_dp(kz_term:ne_binary(), fs_apps()) -> ep_actions().
+-spec build_bridge_action_dp(kz_term:ne_binary(), ecallmgr_call_command:fs_apps()) -> ep_actions().
 build_bridge_action_dp(K, DP) ->
     build_bridge_action_dp(bridge_action_cmd(K), DP, 1, []).
 
--spec build_bridge_action_dp(kz_term:ne_binary(), fs_apps(), pos_integer(), ep_actions()) -> ep_actions().
+-spec build_bridge_action_dp(kz_term:ne_binary(), ecallmgr_call_command:fs_apps(), pos_integer(), ep_actions()) -> ep_actions().
 build_bridge_action_dp(_K, [], _N, Acc) ->
     lists:reverse(Acc);
 build_bridge_action_dp(K, [{App, Args} | DP], N, Acc) ->
